@@ -10,7 +10,7 @@ if (!publicUser)
 
 		
 
-		addStdCondition("Contractor", "Owner / Builder");
+		addStdCondition("General", "TEST for Scripting Tests");
 
 	}
 
