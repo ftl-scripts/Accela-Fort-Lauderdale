@@ -1,0 +1,39 @@
+if (!publicUser) 
+{
+	applicationSubmittedPermits();
+	if(appTypeArray[1] == "Commercial" || appTypeArray[1] == "Residential")
+	{
+		getDRCNumbers();
+	}
+	var ownBuild = checkCapForLicensedProfessionalType("Owner / Builder");
+	if (ownBuild) 
+	{
+		addStdCondition("Contractor", "Owner / Builder");
+	}
+	//Retrieve GIS Attributes for Custom Fields
+	if(!matches(appTypeArray[1], "Add Contractor", "Address Verification", "Alarm Label", "Alarm Label Request", 
+		"Change of Contractor", "Contractor Registration", "Contractor Registration Amendment", "Extension", "Historical", "Property Record", "Void-Withdraw"))
+	{
+		editAppSpecific("Detailed Use",getGISInfo("Accela/Accela","Site Address Points","DORUSEDETAILS"));
+		editAppSpecific("FAA Height Restriction",getGISInfo("Accela/Accela","FAA Height Restriction","HEIGHTRESTRICT"));
+		editAppSpecific("Historical District",getGISInfo("Accela/Accela","Historic Districts","NAME"));
+		editAppSpecific("Historic Site",getGISInfo("Accela/Accela","Historic Properties","NAME"));
+		editAppSpecific("Lot Size",getGISInfo("Accela/Accela","Site Address Points","CNTYGISSQFT"));
+		editAppSpecific("Special Setback",getGISInfo("Accela/Accela","Special Setbacks","SETBACKDESC"));
+		editAppSpecific("Year Built",getGISInfo("Accela/Accela","Site Address Points","PROPYEARBUILT"));
+		editAppSpecific("Zoning Usage",getGISInfo("Accela/Accela","Zoning Districts","ZONEDESC"));
+		addParcelDistrict("",getGISInfo("Accela/Accela","Inspection Districts","DISTRICTID")); // Parcel district for inspection assignment
+		if(!matches(appTypeArray[1], "Awning-Canopy", "Fence", "Outdoor Dining", "ROW", "Sidewalk Cafe", "Sign", 
+			"Special Promotion Tent-Canopy", "Temporary Construction Barrier"))
+		{
+			editAppSpecific("Building Value",getGISInfo("Accela/Accela","Site Address Points","BLDGVALUE"));
+			editAppSpecific("FIRM Panel",getGISInfo("Accela/Accela","FEMA Panels","PANEL"));
+		}
+	}
+	if(!matches(appTypeArray[1], "Add Contractor", "Change of Contractor", "Alarm Label Request", "Contractor Registration"))
+	{
+		// adds Adhoc Task for Contractor Constraints
+		addContractorAdhocTask(capId);
+	}
+}
+//schedulePendingInspectionsByGroup(appTypeArray[0]);
