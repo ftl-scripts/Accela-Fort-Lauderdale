@@ -1,0 +1,17 @@
+if (!publicUser) 
+
+{
+
+	applicationSubmittedPermits();
+
+	if(appTypeArray[1] == "Change Control")
+
+	{
+
+		
+
+		addStdCondition("Contractor", "Owner / Builder");
+
+	}
+
+	}
