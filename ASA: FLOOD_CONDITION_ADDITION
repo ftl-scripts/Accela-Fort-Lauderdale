@@ -1,0 +1,7 @@
+{if (((AInfo["Flood Zone (New Cases)"] == "AE") ||  (AInfo["Flood Zone (New Cases)"] == "VE") || 
+(AInfo["Flood Zone (New Cases)"] == "AH") ||  (AInfo["Flood Zone (New Cases)"] == "AO")) && 
+ (AInfo["SI: Compliance Required"] == "No"))
+{ 
+addStdCondition("Flood", "Mechanical Equipment Certificate Required");
+}
+}
