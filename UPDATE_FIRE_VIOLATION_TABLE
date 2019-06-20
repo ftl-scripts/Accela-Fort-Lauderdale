@@ -1,0 +1,437 @@
+function updateFireViolationTable(inspectionId)
+{
+	var existingIdArray = new Array();
+	var newIdArray = new Array();
+	var oldViolationArray = new Array();
+	var vArray = new Array();
+	var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(capId).getOutput();
+	var ta = gm.getTablesArray();
+	var tai = ta.iterator();
+	while (tai.hasNext())
+	{
+		var tsm = tai.next();
+		var tn = tsm.getTableName();
+		if (tn.equals("VIOLATIONS"))
+		{
+			if (!tsm.rowIndex.isEmpty())
+			{
+				var tsmfldi = tsm.getTableField().iterator();
+				var tsmcoli = tsm.getColumns().iterator();
+				var vId = "";
+				var vCode = "";
+				var vType = "";
+				var vDate = "";
+				var vCompByDate = "";
+				var vComplied = "";
+				var vOrdinance = "";
+				var vCorrective = "";
+				var vToWit = "";
+				var vDaily = "";
+				var readOnly = "N";
+				while (tsmfldi.hasNext())
+				{
+					if (!tsmcoli.hasNext())
+					{
+						oldViolationArray.push(vArray);
+						var tsmcoli = tsm.getColumns().iterator();
+						vArray = new Array();
+						var vId = "";
+						var vCode = "";
+						var vType = "";
+						var vDate = "";
+						var vCompByDate = "";
+						var vComplied = "";
+						var vOrdinance = "";
+						var vCorrective = "";
+						var vToWit = "";
+						var vDaily = "";
+					}
+					var tcol = tsmcoli.next();
+					var tval = tsmfldi.next();
+					if (tcol.getColumnName().equals("ID"))
+					{
+						vId = tval;
+						existingIdArray.push(vId);
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vId, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Violation Code"))
+					{
+						vId = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vId, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Violation Type"))
+					{
+						vType = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vType, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Violation Date"))
+					{
+						vDate = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vDate, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Comply By Date"))
+					{
+						vCompByDate = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vCompByDate, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Complied Date"))
+					{
+						vComplied = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vComplied, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Ordinance"))
+					{
+						vOrdinance = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vOrdinance, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Corrective Action"))
+					{
+						vCorrective = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vCorrective, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("ToWit"))
+					{
+						vToWit = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vToWit, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Daily Amount"))
+					{
+						vDaily = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vDaily, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+				}
+				oldViolationArray.push(vArray);
+				oldViolationArray.sort
+				(
+					function(a, b)
+					{
+						return a.ID - b.ID;
+					}
+				)
+			}
+		}
+	}
+	var newViolationArray = new Array();
+	var readOnly = "N";
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						if(gsArray[loopk].getGuideType().contains("FS_ACCT"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								var violationArray = new Array();
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									var violationID = gsItems[loopi].getGuideItemText();
+									newIdArray.push(violationID);
+									var fieldInfo = new asiTableValObj("ID", violationID, readOnly);
+									violationArray["ID"] = fieldInfo;
+									
+									var commentArray = new Array();
+									var violationOrdinance = "";
+									var violationCode = "";
+									var violationCorrective = "";
+									var violationToWit = "";
+									var guideComment = gsItems[loopi].getGuideItemComment();
+									if(guideComment.indexOf("~") > 0)
+									{
+										commentArray = guideComment.split("~");
+										var arrLength = commentArray.length;
+										if(parseInt(arrLength) == 2)
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+										} 
+										else if(parseInt(arrLength) == 3)
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+											violationCorrective = commentArray[2].trim();
+										}
+										else
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+											violationCorrective = commentArray[2].trim();
+											violationToWit = commentArray[3].trim();
+										}
+									}
+									else
+									{
+										violationOrdinance = guideComment.trim();
+										
+									}
+									var fieldInfo = new asiTableValObj("Violation Code", violationCode, readOnly);
+									violationArray["Violation Code"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Ordinance", violationOrdinance, readOnly);
+									violationArray["Ordinance"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Corrective Action", violationCorrective, readOnly);
+									violationArray["Corrective Action"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("ToWit", violationToWit, readOnly);
+									violationArray["ToWit"] = fieldInfo;								
+									
+									var violationType = gsItems[loopi].getGuideItemStatus();
+									var fieldInfo = new asiTableValObj("Violation Type", violationType, readOnly);
+									violationArray["Violation Type"] = fieldInfo;
+									
+									var violationDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+									var fieldInfo = new asiTableValObj("Violation Date", violationDate, readOnly);
+									violationArray["Violation Date"] = fieldInfo;
+									
+									var compByDate = new Date();
+									var violationWarning = "";
+									var violationCitation = "";
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															compByDate = ASIModel.getAttributeValue();
+														}
+														
+													}
+												}
+											}
+										}
+									}
+									var fieldInfo = new asiTableValObj("Comply By Date", compByDate, readOnly);
+									violationArray["Comply By Date"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Citation Warning", violationWarning, readOnly);
+									violationArray["Citation Warning"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Citation", violationCitation, readOnly);
+									violationArray["Citation"] = fieldInfo;
+									
+									if(gsItems[loopi].getGuideItemStatus() == "Complied")
+									{
+										var compliedDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+										violationArray["Complied Date"] = fieldInfo;
+									}
+									else
+									{
+										var compliedDate = "";
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+										violationArray["Complied Date"] = fieldInfo;
+									}
+									
+									var dollarAmt = 0;
+									var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dollarAmt).toFixed(2), readOnly);
+									violationArray["Daily Amount"] = fieldInfo;
+									newViolationArray.push(violationArray);
+								}
+							}
+						}
+						newViolationArray.sort
+						(
+							function(a, b)
+							{
+								return a.ID - b.ID;
+							}
+						)
+					}
+				}
+			}
+		}
+	}
+	for(var n in newViolationArray)
+	{
+		var newV = newViolationArray[n];
+		var exists = idExists(newV["ID"].fieldValue);
+		logDebug("Exists: " + exists);
+		if (exists)
+		{
+			for (var o in oldViolationArray)
+			{
+				var oldV = oldViolationArray[o];
+				var oldID = oldV["ID"].fieldValue;
+				var newID = newV["ID"].fieldValue;
+				if (oldID.equals(newID))
+				{
+					var oldComply = oldV["Comply By Date"].fieldValue;
+					var newComply = newV["Comply By Date"].fieldValue;
+					if (!oldComply.equals(newComply))
+					{
+						oldV["Comply By Date"] = newV["Comply By Date"];
+					}
+					var oldComplied = oldV["Complied Date"].fieldValue;
+					var newComplied = newV["Complied Date"].fieldValue;
+					if (!matches(newComplied, "", undefined, null))
+					{
+						if(!matches(oldComplied, "", undefined, null))
+						{
+							if(!oldComplied.equals(newComplied))
+							{
+								oldV["Complied Date"] = newV["Complied Date"];
+							}
+						}
+						else
+						{
+							oldV["Complied Date"] = newV["Complied Date"];
+						}
+					}
+					var oldDay = oldV["Daily Amount"].fieldValue;
+					var newDay = newV["Daily Amount"].fieldValue;
+					if (!matches(newDay, "", undefined, null, 0.00, 0))
+					{
+						if(!matches(oldDay, "", undefined, null, 0.00, 0))
+						{
+							if(!oldDay.equals(newDay))
+							{
+								oldV["Daily Amount"] = newV["Daily Amount"];
+							}
+						}
+						else
+						{
+							oldV["Daily Amount"] = newV["Daily Amount"];
+						}
+					}
+					break;
+				}
+			}
+		}
+		else
+		{
+			vArray = new Array();
+			var nid = newV["ID"].fieldValue;
+			var fieldInfo = new asiTableValObj("ID", nid, readOnly);
+			vArray["ID"] = fieldInfo;
+			
+			var nvcode = newV["Violation Code"].fieldValue;
+			var fieldInfo = new asiTableValObj("Violation Code", nvcode, readOnly);
+			vArray["Violation Code"] = fieldInfo;
+			
+			var nvtype = newV["Violation Type"].fieldValue;
+			var fieldInfo = new asiTableValObj("Violation Type", nvtype, readOnly);
+			vArray["Violation Type"] = fieldInfo;
+			
+			var nvdate = newV["Violation Date"].fieldValue;
+			var fieldInfo = new asiTableValObj("Violation Date", nvdate, readOnly);
+			vArray["Violation Date"] = fieldInfo;
+			
+			var ncdate = newV["Comply By Date"].fieldValue;
+			var fieldInfo = new asiTableValObj("Comply By Date", ncdate, readOnly);
+			vArray["Comply By Date"] = fieldInfo;
+			
+			var cDate = newV["Complied Date"].fieldValue;
+			if(matches(cDate, "", undefined, null))
+			{
+				cDate = "";
+			}
+			var fieldInfo = new asiTableValObj("Complied Date", cDate, readOnly);
+			vArray["Complied Date"] = fieldInfo;
+			
+			var nord = newV["Ordinance"].fieldValue;
+			var fieldInfo = new asiTableValObj("Ordinance", nord, readOnly);
+			vArray["Ordinance"] = fieldInfo;
+			
+			var ntowit = newV["ToWit"].fieldValue;
+			var fieldInfo = new asiTableValObj("ToWit", ntowit, readOnly);
+			vArray["ToWit"] = fieldInfo;
+			
+			var ncoract = newV["Corrective Action"].fieldValue;
+			var fieldInfo = new asiTableValObj("Corrective Action", ncoract, readOnly);
+			vArray["Corrective Action"] = fieldInfo;
+			
+			var warn = newV["Citation Warning"].fieldValue;
+			if(matches(warn, "", undefined, null))
+			{
+				warn = "";
+			}
+			var fieldInfo = new asiTableValObj("Citation Warning", warn, readOnly);
+			vArray["Citation Warning"] = fieldInfo;
+			
+			var cit = newV["Citation"].fieldValue;
+			if(matches(cit, "", undefined, null))
+			{
+				cit = "";
+			}
+			var fieldInfo = new asiTableValObj("Citation", cit, readOnly);
+			vArray["Citation"] = fieldInfo;
+			
+			var dAmt = newV["Daily Amount"].fieldValue;
+			if(matches(dAmt, "", undefined, null, 0.00, 0))
+			{
+				dAmt = 0;
+			}
+			var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dAmt).toFixed(2), readOnly);
+			vArray["Daily Amount"] = fieldInfo;
+			oldViolationArray.push(vArray);
+		}
+	}
+	removeASITable("VIOLATIONS");
+	addASITable("VIOLATIONS", oldViolationArray, capId);
+	function idExists(id)
+	{
+		var ex = false;
+		for(var e in existingIdArray)
+		{
+			if(existingIdArray[e] == id)
+			{
+				ex = true;
+			}
+		}
+		if(ex)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+}
