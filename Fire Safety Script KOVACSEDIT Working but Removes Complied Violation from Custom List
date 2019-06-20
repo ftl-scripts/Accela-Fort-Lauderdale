@@ -1,0 +1,316 @@
+if (inspType.contains("FS-Reinspection") && inspResult == "Formal Enforcement")
+{
+	createFireCodeCase(inspId);
+}
+//Schedule 1st reinspection if Annual inspection fails update Fire Account Custom List
+if (inspType == "FS-Annual Inspection" && inspResult == "Fail")
+{
+	addFireAccountViolationTable(inspId, getFireComplyByDate(inspId), capId);
+	var compDate = getFireComplyByDate(inspId);
+	if (!matches(compDate, null, "", undefined))
+	{
+		var numDays = dateDiff(startDate, compDate);
+		numDays = Math.ceil(numDays) + 1;
+	}
+	else
+	{
+		numDays = 0;
+	}
+	if(numDays > 0)
+	{
+		scheduleInspection("FS-Reinspection 1", numDays, currentUserID, null, "auto-scheduled");
+	}
+}
+//attach inspection report
+if(inspResult == "Pass" || inspResult == "Fail")
+{
+		var scriptCode = "SENDVIOLATIONREPORTASYNC";  // name of script
+		var envParameters = aa.util.newHashMap();
+		envParameters.put ("capId", capId);
+		envParameters.put("reportName", "Fire Safety Inspection Report");
+		var rParams = aa.util.newHashMap();
+		rParams.put("Record_ID", capIDString);	
+		envParameters.put("reportParameters", rParams);
+		envParameters.put("emailTemplateName", "FIR-INSPRESULT");
+		emailParams = aa.util.newHashMap();
+		addParameter(emailParams, "$$altID$$", capIDString);
+		addParameter(emailParams, "$$capName$$", appTypeArray[1]);
+		envParameters.put("emailParameters", emailParams);
+		aa.runAsyncScript(scriptCode, envParameters);	
+	//
+}
+//Schedule Next FS-Annual Inspection 365 days out
+if (inspType == "FS-Annual Inspection" && inspResult != "No Access")
+{
+	scheduleInspection("FS-Annual Inspection", 365, currentUserID, null, "auto-scheduled");
+	var catStr = getAppSpecific("Category");
+	var catArr = catStr.split("-");
+	var unit = getAppSpecific("Number of Units");
+	var sqFt = getAppSpecific("Square Feet Total");
+	logDebug("Fee Code: " + catArr[0]);
+	if(catArr[0] == "100R" || catArr[0] == "115")
+	{
+		if(matches(unit, null, undefined, ""))
+		{
+			unit = 0;
+		}
+		if(parseInt(unit) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(unit), "Y");
+		}
+	}
+	else
+	{
+		if(matches(sqFt, null, undefined, ""))
+		{
+			sqFt = 0;
+		}
+		if(parseInt(sqFt) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(sqFt), "Y");
+		}
+	}
+}
+/*Removed section for additional types of Annual Inspections after process change
+//Schedule Next FS-Annual Inspection HRS 365 days out
+if (inspType == "FS-Annual Inspection HRS" && inspResult != "No Access")
+{
+	scheduleInspection("FS-Annual Inspection HRS", 365, currentUserID, null, "auto-scheduled");
+	var catStr = getAppSpecific("Category");
+	var catArr = catStr.split("-");
+	var unit = getAppSpecific("Number of Units");
+	var sqFt = getAppSpecific("Square Feet Total");
+	logDebug("Fee Code: " + catArr[0]);
+	if(catArr[0] == "100R" || catArr[0] == "115")
+	{
+		if(matches(unit, null, undefined, ""))
+		{
+			unit = 0;
+		}
+		if(parseInt(unit) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(unit), "Y");
+		}
+	}
+	else
+	{
+		if(matches(sqFt, null, undefined, ""))
+		{
+			sqFt = 0;
+		}
+		if(parseInt(sqFt) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(sqFt), "Y");
+		}
+	}
+}
+//Schedule Next FS-Annual Inspection Sprinklers 365 days out
+if (inspType == "FS-Annual Inspection Sprinklers" && inspResult != "No Access")
+{
+	scheduleInspection("FS-Annual Inspection Sprinklers", 365, currentUserID, null, "auto-scheduled");
+	var catStr = getAppSpecific("Category");
+	var catArr = catStr.split("-");
+	var unit = getAppSpecific("Number of Units");
+	var sqFt = getAppSpecific("Square Feet Total");
+	logDebug("Fee Code: " + catArr[0]);
+	if(catArr[0] == "100R" || catArr[0] == "115")
+	{
+		if(matches(unit, null, undefined, ""))
+		{
+			unit = 0;
+		}
+		if(parseInt(unit) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(unit), "Y");
+		}
+	}
+	else
+	{
+		if(matches(sqFt, null, undefined, ""))
+		{
+			sqFt = 0;
+		}
+		if(parseInt(sqFt) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(sqFt), "Y");
+		}
+	}
+}
+//Schedule Next FS-Annual Inspection High Rise 365 days out
+if (inspType == "FS-Annual Inspection High Rise" && inspResult != "No Access")
+{
+	scheduleInspection("FS-Annual Inspection High Rise", 365, currentUserID, null, "auto-scheduled");
+	var catStr = getAppSpecific("Category");
+	var catArr = catStr.split("-");
+	var unit = getAppSpecific("Number of Units");
+	var sqFt = getAppSpecific("Square Feet Total");
+	logDebug("Fee Code: " + catArr[0]);
+	if(catArr[0] == "100R" || catArr[0] == "115")
+	{
+		if(matches(unit, null, undefined, ""))
+		{
+			unit = 0;
+		}
+		if(parseInt(unit) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(unit), "Y");
+		}
+	}
+	else
+	{
+		if(matches(sqFt, null, undefined, ""))
+		{
+			sqFt = 0;
+		}
+		if(parseInt(sqFt) > 0)
+		{
+			addFee(catArr[0], "FIRE_SAFETY", "FINAL", parseInt(sqFt), "Y");
+		}
+	}
+}
+*/
+
+
+//Schedule Routine Inspection 30 days out if No Access
+if (inspType == "FS-Annual Inspection" && inspResult == "No Access")
+{
+	scheduleInspectENF(capId, inspType, 30, currentUserID);
+}
+//Re-inspection scheduling (based on Comply By Date in Checklist) and adding appropriate fee
+if (inspType == "FS-Reinspection 1" && inspResult == "Fail")
+{
+	var compDate = getFireComplyByDate(inspId);
+	if (!matches(compDate, null, "", undefined))
+	{
+		var numDays = dateDiff(startDate, compDate);
+		numDays = Math.ceil(numDays) + 1;
+	}
+	else
+	{
+		numDays = 0;
+	}
+	if(numDays > 0)
+	{
+		scheduleInspection("FS-Reinspection 2", numDays, currentUserID, null, "auto-scheduled");
+	}
+	if (inspType == "FS-Reinspection 1")
+	{
+		addFireAccountViolationTable(inspId, getFireComplyByDate(inspId), capId);
+	}
+}
+
+if (inspType == "FS-Reinspection 2")
+{	
+	addFee("FS207", "FIRE_SAFETY", "FINAL", 1, "Y");
+}
+if (inspType == "FS-Reinspection 2" && inspResult == "Fail")
+{
+	var compDate = getFireComplyByDate(inspId);
+	if (!matches(compDate, null, "", undefined))
+	{
+		var numDays = dateDiff(startDate, compDate);
+		numDays = Math.ceil(numDays) + 1;
+	}
+	else
+	{
+		numDays = 0;
+	}
+	if(numDays > 0)
+	{
+		scheduleInspection("FS-Reinspection 3", numDays, currentUserID, null, "auto-scheduled");
+	}
+	
+}
+
+if (inspType == "FS-Reinspection 3")
+{	
+	addFee("FS207", "FIRE_SAFETY", "FINAL", 1, "Y");
+}
+if (inspType == "FS-Reinspection 3" && inspResult == "Fail")
+{
+	var compDate = getFireComplyByDate(inspId);
+	if (!matches(compDate, null, "", undefined))
+	{
+		var numDays = dateDiff(startDate, compDate);
+		numDays = Math.ceil(numDays) + 1;
+	}
+	else
+	{
+		numDays = 0;
+	}
+	if(numDays > 0)
+	{
+		scheduleInspection("FS-Reinspection 4", numDays, currentUserID, null, "auto-scheduled");
+	}
+}
+
+if (inspType == "FS-Reinspection 4")
+{	
+	addFee("FS207", "FIRE_SAFETY", "FINAL", 1, "Y");
+}
+if (inspType == "FS-Reinspection 4" && inspResult == "Fail")
+{
+	var compDate = getFireComplyByDate(inspId);
+	if (!matches(compDate, null, "", undefined))
+	{
+		var numDays = dateDiff(startDate, compDate);
+		numDays = Math.ceil(numDays) + 1;
+	}
+	else
+	{
+		numDays = 0;
+	}
+	if(numDays > 0)
+	{
+		scheduleInspection("FS-Reinspection 5", numDays, currentUserID, null, "auto-scheduled");
+	}
+}
+
+if (inspType == "FS-Reinspection 5")
+{	
+	addFee("FS207", "FIRE_SAFETY", "FINAL", 1, "Y");
+}
+if (inspType == "FS-Reinspection 5" && inspResult == "Fail")
+{
+	var compDate = getFireComplyByDate(inspId);
+	if (!matches(compDate, null, "", undefined))
+	{
+		var numDays = dateDiff(startDate, compDate);
+		numDays = Math.ceil(numDays) + 1;
+	}
+	else
+	{
+		numDays = 0;
+	}
+	if(numDays > 0)
+	{
+		scheduleInspection("FS-Reinspection 6", numDays, currentUserID, null, "auto-scheduled");
+	}
+}
+
+if (inspType == "FS-Reinspection 6")
+{	
+	addFee("FS207", "FIRE_SAFETY", "FINAL", 1, "Y");
+}
+if (inspType == "FS-Reinspection 6" && inspResult == "Fail")
+{
+	var compDate = getFireComplyByDate(inspId);
+	if (!matches(compDate, null, "", undefined))
+	{
+		var numDays = dateDiff(startDate, compDate);
+		numDays = Math.ceil(numDays) + 1;
+	}
+	else
+	{
+		numDays = 0;
+	}
+	if(numDays > 0)
+	{
+		scheduleInspection("FS-Reinspection 7", numDays, currentUserID, null, "auto-scheduled");
+	}
+}
+
+if (inspType == "FS-Reinspection 7")
+{	
+	addFee("FS207", "FIRE_SAFETY", "FINAL", 1, "Y");
+}
