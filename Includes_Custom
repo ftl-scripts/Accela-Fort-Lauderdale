@@ -1,0 +1,5920 @@
+function addAdHocTask(adHocProcess, adHocTask, adHocNote, dueDate)
+{
+//adHocProcess must be same as one defined in R1SERVER_CONSTANT
+//adHocTask must be same as Task Name defined in AdHoc Process
+//adHocNote can be variable
+//Optional 4 parameters = Assigned to User ID must match an AA user
+//Optional 5 parameters = CapID
+	var thisCap = capId;
+	var thisUser = currentUserID;
+	if(arguments.length > 4)
+		thisUser = arguments[4]
+	if(arguments.length > 5)
+		thisCap = arguments[5];
+	var userObj = aa.person.getUser(thisUser);
+	if (!userObj.getSuccess())
+	{
+		logDebug("Could not find user to assign to");
+		return false;
+	}
+	var taskObj = aa.workflow.getTasks(thisCap).getOutput()[0].getTaskItem();
+	taskObj.setProcessCode(adHocProcess);
+	taskObj.setTaskDescription(adHocTask);
+	taskObj.setDispositionNote(adHocNote);
+	taskObj.setProcessID(0);
+	taskObj.setAssignmentDate(aa.util.now());
+	taskObj.setDueDate(dueDate);
+	taskObj.setAssignedUser(userObj.getOutput());
+	wf = aa.proxyInvoker.newInstance("com.accela.aa.workflow.workflow.WorkflowBusiness").getOutput();
+	wf.createAdHocTaskItem(taskObj);
+	return true;
+}
+function addENFSANYardageFee(inspectionId)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("ENF_San Violations"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							var billable = true;
+							var yardage = 0;
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() == "Hearing")
+								{
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														logDebug("Field: " + ASIModel.getAsiName() + ": " + ASIModel.getAttributeValue());
+														if(ASIModel && ASIModel.getAsiName() == "Non-Billable" && !matches(ASIModel.getAttributeValue(), null, undefined, "", "UNCHECKED")) 
+														{
+															billable = false;
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Pile Yardage" && !matches(ASIModel.getAttributeValue(), null, undefined, "", 0)) 
+														{
+															yardage = ASIModel.getAttributeValue();
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					logDebug("Billable: " + billable);
+					logDebug("Yardage: " + yardage);
+					if (billable == true)
+					{
+						updateFee("ENF002", "ENF-SAN", "FINAL", parseInt(yardage), "Y");
+					}
+				}
+			}
+		}
+	}
+}
+function updateFireViolationTable(inspectionId)
+
+{
+
+	var existingIdArray = new Array();
+
+	var newIdArray = new Array();
+
+	var oldViolationArray = new Array();
+
+	var vArray = new Array();
+
+	var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(capId).getOutput();
+
+	var ta = gm.getTablesArray();
+
+	var tai = ta.iterator();
+
+	while (tai.hasNext())
+
+	{
+
+		var tsm = tai.next();
+
+		var tn = tsm.getTableName();
+
+		if (tn.equals("VIOLATIONS"))
+
+		{
+
+			if (!tsm.rowIndex.isEmpty())
+
+			{
+
+				var tsmfldi = tsm.getTableField().iterator();
+
+				var tsmcoli = tsm.getColumns().iterator();
+
+				var vId = "";
+
+				var vCode = "";
+
+				var vType = "";
+
+				var vDate = "";
+
+				var vCompByDate = "";
+
+				var vComplied = "";
+
+				var vOrdinance = "";
+
+				var vCorrective = "";
+
+				var vToWit = "";
+
+				var vDaily = "";
+
+				var readOnly = "N";
+
+				while (tsmfldi.hasNext())
+
+				{
+
+					if (!tsmcoli.hasNext())
+
+					{
+
+						oldViolationArray.push(vArray);
+
+						var tsmcoli = tsm.getColumns().iterator();
+
+						vArray = new Array();
+
+						var vId = "";
+
+						var vCode = "";
+
+						var vType = "";
+
+						var vDate = "";
+
+						var vCompByDate = "";
+
+						var vComplied = "";
+
+						var vOrdinance = "";
+
+						var vCorrective = "";
+
+						var vToWit = "";
+
+						var vDaily = "";
+
+					}
+
+					var tcol = tsmcoli.next();
+
+					var tval = tsmfldi.next();
+
+					if (tcol.getColumnName().equals("ID"))
+
+					{
+
+						vId = tval;
+
+						existingIdArray.push(vId);
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vId, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Violation Code"))
+
+					{
+
+						vId = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vId, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Violation Type"))
+
+					{
+
+						vType = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vType, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Violation Date"))
+
+					{
+
+						vDate = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vDate, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Comply By Date"))
+
+					{
+
+						vCompByDate = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vCompByDate, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Complied Date"))
+
+					{
+
+						vComplied = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vComplied, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Ordinance"))
+
+					{
+
+						vOrdinance = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vOrdinance, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Corrective Action"))
+
+					{
+
+						vCorrective = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vCorrective, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("ToWit"))
+
+					{
+
+						vToWit = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vToWit, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+					if (tcol.getColumnName().equals("Daily Amount"))
+
+					{
+
+						vDaily = tval;
+
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vDaily, readOnly);
+
+						vArray[tcol.getColumnName()] = fieldInfo;
+
+					}
+
+				}
+
+				oldViolationArray.push(vArray);
+
+				oldViolationArray.sort
+
+				(
+
+					function(a, b)
+
+					{
+
+						return a.ID - b.ID;
+
+					}
+
+				)
+
+			}
+
+		}
+
+	}
+
+	var newViolationArray = new Array();
+
+	var readOnly = "N";
+
+	var r = aa.inspection.getInspections(capId);
+
+	if (r.getSuccess())
+
+ 	{
+
+		var inspArray = r.getOutput();
+
+		for (i in inspArray)
+
+		{
+
+			if (inspArray[i].getIdNumber() == inspectionId)
+
+			{
+
+				var inspModel = inspArray[i].getInspection();
+
+				var gs = inspModel.getGuideSheets();
+
+				if (!gs.isEmpty())
+
+				{
+
+					gsArray = gs.toArray();
+
+					for (var loopk in gsArray)
+
+					{
+
+						if(gsArray[loopk].getGuideType().contains("FS_ACCT"))
+
+						{
+
+							var gsItems = gsArray[loopk].getItems().toArray();
+
+							for (var loopi in gsItems)
+
+							{
+
+								var violationArray = new Array();
+
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+
+								{
+
+									var violationID = gsItems[loopi].getGuideItemText();
+
+									newIdArray.push(violationID);
+
+									var fieldInfo = new asiTableValObj("ID", violationID, readOnly);
+
+									violationArray["ID"] = fieldInfo;
+
+									
+
+									var commentArray = new Array();
+
+									var violationOrdinance = "";
+
+									var violationCode = "";
+
+									var violationCorrective = "";
+
+									var violationToWit = "";
+
+									var guideComment = gsItems[loopi].getGuideItemComment();
+
+									if(guideComment.indexOf("~") > 1)
+
+									{
+
+										commentArray = guideComment.split("~");
+
+										var arrLength = commentArray.length;
+
+										if(parseInt(arrLength) == 2)
+
+										{
+
+											vCode = commentArray[0].trim();
+
+											if(vCode.length() > 20)
+
+											{
+
+												vCode = vCode.substr(0, 20);
+
+											}
+
+											violationCode = vCode.trim();
+
+											violationOrdinance = commentArray[1].trim();
+
+										} 
+
+										else if(parseInt(arrLength) == 3)
+
+										{
+
+											vCode = commentArray[0].trim();
+
+											if(vCode.length() > 20)
+
+											{
+
+												vCode = vCode.substr(0, 20);
+
+											}
+
+											violationCode = vCode.trim();
+
+											violationOrdinance = commentArray[1].trim();
+
+											violationCorrective = commentArray[2].trim();
+
+										}
+
+										else
+
+										{
+
+											vCode = commentArray[0].trim();
+
+											if(vCode.length() > 20)
+
+											{
+
+												vCode = vCode.substr(0, 20);
+
+											}
+
+											violationCode = vCode.trim();
+
+											violationOrdinance = commentArray[1].trim();
+
+											violationCorrective = commentArray[2].trim();
+
+											violationToWit = commentArray[3].trim();
+
+										}
+
+									}
+
+									else
+
+									{
+
+										violationOrdinance = guideComment.trim();
+
+										
+
+									}
+
+									var fieldInfo = new asiTableValObj("Violation Code", violationCode, readOnly);
+
+									violationArray["Violation Code"] = fieldInfo;
+
+									
+
+									var fieldInfo = new asiTableValObj("Ordinance", violationOrdinance, readOnly);
+
+									violationArray["Ordinance"] = fieldInfo;
+
+									
+
+									var fieldInfo = new asiTableValObj("Corrective Action", violationCorrective, readOnly);
+
+									violationArray["Corrective Action"] = fieldInfo;
+
+									
+
+									var fieldInfo = new asiTableValObj("ToWit", violationToWit, readOnly);
+
+									violationArray["ToWit"] = fieldInfo;								
+
+									
+
+									var violationType = gsItems[loopi].getGuideItemStatus();
+
+									var fieldInfo = new asiTableValObj("Violation Type", violationType, readOnly);
+
+									violationArray["Violation Type"] = fieldInfo;
+
+									
+
+									var violationDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+
+									var fieldInfo = new asiTableValObj("Violation Date", violationDate, readOnly);
+
+									violationArray["Violation Date"] = fieldInfo;
+
+									
+
+									var compByDate = new Date();
+
+									var violationWarning = "";
+
+									var violationCitation = "";
+
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+
+									if(ASISubGroups)
+
+									{
+
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+
+										{
+
+											var ASISubGroup = ASISubGroups.get(k);
+
+											if(ASISubGroup) 
+
+											{
+
+												var ASIModels =  ASISubGroup.getAsiList();
+
+												if(ASIModels) 
+
+												{
+
+													for(var m = 0; m < ASIModels.size(); m++) 
+
+													{
+
+														var ASIModel = ASIModels.get(m);
+
+														if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+
+														{
+
+															compByDate = ASIModel.getAttributeValue();
+
+														}
+
+														
+
+													}
+
+												}
+
+											}
+
+										}
+
+									}
+
+									var fieldInfo = new asiTableValObj("Comply By Date", compByDate, readOnly);
+
+									violationArray["Comply By Date"] = fieldInfo;
+
+									
+
+									var fieldInfo = new asiTableValObj("Citation Warning", violationWarning, readOnly);
+
+									violationArray["Citation Warning"] = fieldInfo;
+
+									
+
+									var fieldInfo = new asiTableValObj("Citation", violationCitation, readOnly);
+
+									violationArray["Citation"] = fieldInfo;
+
+									
+
+									if(gsItems[loopi].getGuideItemStatus() == "Complied")
+
+									{
+
+										var compliedDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+
+										violationArray["Complied Date"] = fieldInfo;
+
+									}
+
+									else
+
+									{
+
+										var compliedDate = "";
+
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+
+										violationArray["Complied Date"] = fieldInfo;
+
+									}
+
+									
+
+									var dollarAmt = 0;
+
+									var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dollarAmt).toFixed(2), readOnly);
+
+									violationArray["Daily Amount"] = fieldInfo;
+
+									newViolationArray.push(violationArray);
+
+								}
+
+							}
+
+						}
+
+						newViolationArray.sort
+
+						(
+
+							function(a, b)
+
+							{
+
+								return a.ID - b.ID;
+
+							}
+
+						)
+
+					}
+
+				}
+
+			}
+
+		}
+
+	}
+
+	for(var n in newViolationArray)
+
+	{
+
+		var newV = newViolationArray[n];
+
+		var exists = idExists(newV["ID"].fieldValue);
+
+		logDebug("Exists: " + exists);
+
+		if (exists)
+
+		{
+
+			for (var o in oldViolationArray)
+
+			{
+
+				var oldV = oldViolationArray[o];
+
+				var oldID = oldV["ID"].fieldValue;
+
+				var newID = newV["ID"].fieldValue;
+
+				if (oldID.equals(newID))
+
+				{
+
+					var oldComply = oldV["Comply By Date"].fieldValue;
+
+					var newComply = newV["Comply By Date"].fieldValue;
+
+					if (!oldComply.equals(newComply))
+
+					{
+
+						oldV["Comply By Date"] = newV["Comply By Date"];
+
+					}
+
+					var oldComplied = oldV["Complied Date"].fieldValue;
+
+					var newComplied = newV["Complied Date"].fieldValue;
+
+					if (!matches(newComplied, "", undefined, null))
+
+					{
+
+						if(!matches(oldComplied, "", undefined, null))
+
+						{
+
+							if(!oldComplied.equals(newComplied))
+
+							{
+
+								oldV["Complied Date"] = newV["Complied Date"];
+
+							}
+
+						}
+
+						else
+
+						{
+
+							oldV["Complied Date"] = newV["Complied Date"];
+
+						}
+
+					}
+
+					var oldDay = oldV["Daily Amount"].fieldValue;
+
+					var newDay = newV["Daily Amount"].fieldValue;
+
+					if (!matches(newDay, "", undefined, null, 0.00, 0))
+
+					{
+
+						if(!matches(oldDay, "", undefined, null, 0.00, 0))
+
+						{
+
+							if(!oldDay.equals(newDay))
+
+							{
+
+								oldV["Daily Amount"] = newV["Daily Amount"];
+
+							}
+
+						}
+
+						else
+
+						{
+
+							oldV["Daily Amount"] = newV["Daily Amount"];
+
+						}
+
+					}
+
+					break;
+
+				}
+
+			}
+
+		}
+
+		else
+
+		{
+
+			vArray = new Array();
+
+			var nid = newV["ID"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("ID", nid, readOnly);
+
+			vArray["ID"] = fieldInfo;
+
+			
+
+			var nvcode = newV["Violation Code"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("Violation Code", nvcode, readOnly);
+
+			vArray["Violation Code"] = fieldInfo;
+
+			
+
+			var nvtype = newV["Violation Type"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("Violation Type", nvtype, readOnly);
+
+			vArray["Violation Type"] = fieldInfo;
+
+			
+
+			var nvdate = newV["Violation Date"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("Violation Date", nvdate, readOnly);
+
+			vArray["Violation Date"] = fieldInfo;
+
+			
+
+			var ncdate = newV["Comply By Date"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("Comply By Date", ncdate, readOnly);
+
+			vArray["Comply By Date"] = fieldInfo;
+
+			
+
+			var cDate = newV["Complied Date"].fieldValue;
+
+			if(matches(cDate, "", undefined, null))
+
+			{
+
+				cDate = "";
+
+			}
+
+			var fieldInfo = new asiTableValObj("Complied Date", cDate, readOnly);
+
+			vArray["Complied Date"] = fieldInfo;
+
+			
+
+			var nord = newV["Ordinance"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("Ordinance", nord, readOnly);
+
+			vArray["Ordinance"] = fieldInfo;
+
+			
+
+			var ntowit = newV["ToWit"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("ToWit", ntowit, readOnly);
+
+			vArray["ToWit"] = fieldInfo;
+
+			
+
+			var ncoract = newV["Corrective Action"].fieldValue;
+
+			var fieldInfo = new asiTableValObj("Corrective Action", ncoract, readOnly);
+
+			vArray["Corrective Action"] = fieldInfo;
+
+			
+
+			var warn = newV["Citation Warning"].fieldValue;
+
+			if(matches(warn, "", undefined, null))
+
+			{
+
+				warn = "";
+
+			}
+
+			var fieldInfo = new asiTableValObj("Citation Warning", warn, readOnly);
+
+			vArray["Citation Warning"] = fieldInfo;
+
+			
+
+			var cit = newV["Citation"].fieldValue;
+
+			if(matches(cit, "", undefined, null))
+
+			{
+
+				cit = "";
+
+			}
+
+			var fieldInfo = new asiTableValObj("Citation", cit, readOnly);
+
+			vArray["Citation"] = fieldInfo;
+
+			
+
+			var dAmt = newV["Daily Amount"].fieldValue;
+
+			if(matches(dAmt, "", undefined, null, 0.00, 0))
+
+			{
+
+				dAmt = 0;
+
+			}
+
+			var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dAmt).toFixed(2), readOnly);
+
+			vArray["Daily Amount"] = fieldInfo;
+
+			oldViolationArray.push(vArray);
+
+		}
+
+	}
+
+	removeASITable("VIOLATIONS");
+
+	addASITable("VIOLATIONS", oldViolationArray, capId);
+
+	function idExists(id)
+
+	{
+
+		var ex = false;
+
+		for(var e in existingIdArray)
+
+		{
+
+			if(existingIdArray[e] == id)
+
+			{
+
+				ex = true;
+
+			}
+
+		}
+
+		if(ex)
+
+		{
+
+			return true;
+
+		}
+
+		else
+
+		{
+
+			return false;
+
+		}
+
+	}
+}
+function addFireViolationTable(inspectionId, compByDate, caseCapId)
+{
+	var allViolationArray = new Array();
+	var readOnly = "N";
+	var r = aa.inspection.getInspections(caseCapId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			logDebug(inspArray[i].getIdNumber());
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("Failed"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								var violationArray = new Array();
+								if(gsItems[loopi].getGuideItemStatus() == "In Violation")
+								{
+									var violationID = gsItems[loopi].getGuideItemText();
+									if(violationID != "Comply By Date")
+									{
+										var fieldInfo = new asiTableValObj("ID", violationID, readOnly);
+										violationArray["ID"] = fieldInfo;
+										
+										var commentArray = new Array();
+										var violationOrdinance = "";
+										var violationCode = "";
+										var violationCorrective = "";
+										var violationToWit = "";
+										var guideComment = gsItems[loopi].getGuideItemComment();
+										if(guideComment.indexOf("~") > 0)
+										{
+											commentArray = guideComment.split("~");
+											var arrLength = commentArray.length;
+											if(parseInt(arrLength) == 2)
+											{
+												vCode = commentArray[0].trim();
+												if(vCode.length() > 20)
+												{
+													vCode = vCode.substr(0, 20);
+												}
+												violationCode = vCode.trim();
+												violationOrdinance = commentArray[1].trim();
+											} 
+											else if(parseInt(arrLength) == 3)
+											{
+												vCode = commentArray[0].trim();
+												if(vCode.length() > 20)
+												{
+													vCode = vCode.substr(0, 20);
+												}
+												violationCode = vCode.trim();
+												violationOrdinance = commentArray[1].trim();
+												violationCorrective = commentArray[2].trim();
+											}
+											else
+											{
+												vCode = commentArray[0].trim();
+												if(vCode.length() > 20)
+												{
+													vCode = vCode.substr(0, 20);
+												}
+												violationCode = vCode.trim();
+												violationOrdinance = commentArray[1].trim();
+												violationCorrective = commentArray[2].trim();
+												violationToWit = commentArray[3].trim();
+											}
+										}
+										else
+										{
+											violationOrdinance = guideComment.trim();
+											
+										}
+										var fieldInfo = new asiTableValObj("Violation Code", violationCode, readOnly);
+										violationArray["Violation Code"] = fieldInfo;
+										
+										var fieldInfo = new asiTableValObj("Ordinance", violationOrdinance, readOnly);
+										violationArray["Ordinance"] = fieldInfo;
+										
+										var fieldInfo = new asiTableValObj("Corrective Action", violationCorrective, readOnly);
+										violationArray["Corrective Action"] = fieldInfo;
+										
+										var fieldInfo = new asiTableValObj("ToWit", violationToWit, readOnly);
+										violationArray["ToWit"] = fieldInfo;								
+										
+										var violationType = gsItems[loopi].getGuideItemStatus();
+										var fieldInfo = new asiTableValObj("Violation Type", violationType, readOnly);
+										violationArray["Violation Type"] = fieldInfo;
+										
+										var violationDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+										var fieldInfo = new asiTableValObj("Violation Date", violationDate, readOnly);
+										violationArray["Violation Date"] = fieldInfo;
+										
+										var violationWarning = "";
+										var violationCitation = "";
+										
+										var fieldInfo = new asiTableValObj("Comply By Date", compByDate, readOnly);
+										violationArray["Comply By Date"] = fieldInfo;
+										
+										var fieldInfo = new asiTableValObj("Citation Warning", violationWarning, readOnly);
+										violationArray["Citation Warning"] = fieldInfo;
+										
+										var fieldInfo = new asiTableValObj("Citation", violationCitation, readOnly);
+										violationArray["Citation"] = fieldInfo;
+										
+										if(gsItems[loopi].getGuideItemStatus() == "Complied")
+										{
+											var compliedDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+											var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+											violationArray["Complied Date"] = fieldInfo;
+										}
+										else
+										{
+											var compliedDate = "";
+											var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+											violationArray["Complied Date"] = fieldInfo;
+										}
+										
+										var dollarAmt = 0;
+										var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dollarAmt).toFixed(2), readOnly);
+										violationArray["Daily Amount"] = fieldInfo;
+										allViolationArray.push(violationArray);
+									}
+								}
+							}
+							addASITable("VIOLATIONS", allViolationArray, caseCapId);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+function addRecordToSet(cId, setCode, setName)
+{
+	var currentSet = aa.set.getSetByPK(setCode);
+	if (!currentSet.getSuccess())
+	{
+		aa.set.createSet(setCode, setName);
+		aa.set.addCapSetMember(setCode, cId);
+	}
+	else
+	{
+		setMembers = aa.set.getCAPSetMembersByPK(setCode);
+		setMem = setMembers.getOutput();
+		if(setMem.isEmpty())
+		{
+			aa.set.addCapSetMember(setCode, cId);
+		}
+		else
+		{
+			var recExists = false;
+			var setMemi = setMem.iterator();
+			while (setMemi.hasNext())
+			{
+				newId = setMemi.next();
+				if (newId == capId)
+				{
+					recExists = true;
+					break;
+				}
+			}
+			if (!recExists)
+			{
+				aa.set.addCapSetMember(setCode, cId);
+			}
+		}
+	}
+}
+function addTowedVehicleTable(inspectionId)
+{
+	var allVehicleArray = new Array();
+	var readOnly = "N";
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						if(gsArray[loopk].getGuideType() == "ENF_Towed Vehicle")
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								var vehicleArray = new Array();
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									var vehicleNum = "";
+									var year = "";
+									var make = "";
+									var model = "";
+									var color = "";
+									var state = "";
+									var license = "";
+									var vin = "";
+									var dateTowed = "";
+									var loc = "";
+									
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Vehicle Number" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															vehicleNum = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Year" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															year = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Make" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															make = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Model" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															model = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Color" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															color = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "State" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															state = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "License" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															license = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "VIN" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															vin = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Date Towed" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															dateTowed = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Location" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															loc = ASIModel.getAttributeValue();
+														}
+													}
+												}
+											}
+										}
+									}
+									var fieldInfo = new asiTableValObj("Vehicle Number", vehicleNum, readOnly);
+									vehicleArray["Vehicle Number"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Year", year, readOnly);
+									vehicleArray["Year"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Make", make, readOnly);
+									vehicleArray["Make"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Model", model, readOnly);
+									vehicleArray["Model"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Color", color, readOnly);
+									vehicleArray["Color"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("State", state, readOnly);
+									vehicleArray["State"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("License", license, readOnly);
+									vehicleArray["License"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("VIN", vin, readOnly);
+									vehicleArray["VIN"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Date Towed", dateTowed, readOnly);
+									vehicleArray["Date Towed"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Location", loc, readOnly);
+									vehicleArray["Location"] = fieldInfo;
+									
+									allVehicleArray.push(vehicleArray);
+								}
+							}
+							addASITable("VEHICLE TOWING", allVehicleArray, capId);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+function addViolationTable(inspectionId)
+{
+	var allViolationArray = new Array();
+	var readOnly = "N";
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.equals("ENF_Violation Checklist"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								var violationArray = new Array();
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									var violationID = gsItems[loopi].getGuideItemText();
+									var fieldInfo = new asiTableValObj("ID", violationID, readOnly);
+									violationArray["ID"] = fieldInfo;
+									
+									var commentArray = new Array();
+									var violationOrdinance = "";
+									var violationCode = "";
+									var violationCorrective = "";
+									var violationToWit = "";
+									var guideComment = gsItems[loopi].getGuideItemComment();
+									if(guideComment.indexOf("~") > 0)
+									{
+										commentArray = guideComment.split("~");
+										var arrLength = commentArray.length;
+										if(parseInt(arrLength) == 2)
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+										} 
+										else if(parseInt(arrLength) == 3)
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+											violationCorrective = commentArray[2].trim();
+										}
+										else
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+											violationCorrective = commentArray[2].trim();
+											violationToWit = commentArray[3].trim();
+										}
+									}
+									else
+									{
+										violationOrdinance = guideComment.trim();
+										
+									}
+									var fieldInfo = new asiTableValObj("Violation Code", violationCode, readOnly);
+									violationArray["Violation Code"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Ordinance", violationOrdinance, readOnly);
+									violationArray["Ordinance"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Corrective Action", violationCorrective, readOnly);
+									violationArray["Corrective Action"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("ToWit", violationToWit, readOnly);
+									violationArray["ToWit"] = fieldInfo;								
+									
+									var violationType = gsItems[loopi].getGuideItemStatus();
+									var fieldInfo = new asiTableValObj("Violation Type", violationType, readOnly);
+									violationArray["Violation Type"] = fieldInfo;
+									
+									var violationDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+									var fieldInfo = new asiTableValObj("Violation Date", violationDate, readOnly);
+									violationArray["Violation Date"] = fieldInfo;
+									
+									var compByDate = new Date();
+									var violationWarning = "";
+									var violationCitation = "";
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															compByDate = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Citation Warning Number" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															violationWarning = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Citation Number" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															violationCitation = ASIModel.getAttributeValue();
+														}
+													}
+												}
+											}
+										}
+									}
+									var fieldInfo = new asiTableValObj("Comply By Date", compByDate, readOnly);
+									violationArray["Comply By Date"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Citation Warning", violationWarning, readOnly);
+									violationArray["Citation Warning"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Citation", violationCitation, readOnly);
+									violationArray["Citation"] = fieldInfo;
+									
+									if(gsItems[loopi].getGuideItemStatus() == "Complied")
+									{
+										var compliedDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+										violationArray["Complied Date"] = fieldInfo;
+									}
+									else
+									{
+										var compliedDate = "";
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+										violationArray["Complied Date"] = fieldInfo;
+									}
+									
+									var dollarAmt = 0;
+									var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dollarAmt).toFixed(2), readOnly);
+									violationArray["Daily Amount"] = fieldInfo;
+									allViolationArray.push(violationArray);
+								}
+							}
+							addASITable("VIOLATIONS", allViolationArray, capId);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+function alarmDuplicateCheck()
+{
+	var capModel = cap.getCapModel();
+	var addressResult = aa.address.getAddressByCapId(capId);
+	var address;
+	var relateRecs = false;
+	if (addressResult.getSuccess)
+	{
+		address = addressResult.getOutput();
+		var recordResult = aa.cap.getCapListByDetailAddress(address[0].getStreetName(), address[0].getHouseNumberStart(), address[0].getStreetSuffix(), address[0].getZip(), address[0].getStreetDirection(), null);
+		if (recordResult.getSuccess)
+		{
+			var recs = recordResult.getOutput();
+			for (r in recs)
+			{
+				var cId = aa.cap.getCapID(recs[r].getID1(), recs[r].getID2(), recs[r].getID3()).getOutput();
+				var altId = cId.getCustomID();
+				if (!matches(cId, null, "", undefined) && altId != capIDString)
+				{
+					var cCap = aa.cap.getCap(cId).getOutput();
+					if (cCap)
+					{
+						var aTypeResult = cCap.getCapType();
+						var aTypeString = aTypeResult.toString();
+						var aTypeArray = aTypeString.split("/");
+						if(aTypeArray[0] == "AlarmBilling" && aTypeArray[1] == "Alarm Registration" && aTypeArray[2] == "Registration" && aTypeArray[3] == "NA") 
+						{
+							var result = aa.cap.createAppHierarchy(capId, cId);
+							if (result.getSuccess())
+							{
+								updateAppStatus("Possible Duplicate", "Updated due to script ASA", capId);
+								updateAppStatus("Possible Duplicate", "Updated due to script ASA", cId);
+								relateRecs = true;
+								updateTask("Registration", "Possible Duplicate", "Updated due to script ASA", "Updated due to script ASA", "ALM_REG_REG", capId);
+								logDebug("Child application successfully linked");
+							}
+							else
+							{
+								logDebug("Could not link applications");
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if (!relateRecs)
+	{
+		updateTask("Registration", "Issued", "Updated due to script ASA", "Updated due to script ASA", "ALM_REG_REG", capId);
+	}
+	editAppSpecific("Generated By", "Registration", capId);
+
+	var genBy = getAppSpecific("Generated By", capId);
+		var genBy = getAppSpecific("Generated By", capId);
+	if (genBy == "Interface")
+	{
+		updateAppStatus("Auto Created", "Updated due to script ASA", capId);
+		updateTask("Registration", "Auto Created", "Updated due to script ASA", "Updated due to script ASA", "ALM_REG_REG", capId);
+		updateFee("AREG", "ALM", "FINAL", 1, "Y");
+		var createSuccess = true;
+		createSuccess = setRecordToEditforACA("Alarm Location");
+
+
+		//added by DMH 02012018 - for AlarmBillingInterface 
+		capAddressResult = aa.address.getAddressByCapId(capId);
+		if (capAddressResult.getSuccess()) {
+			var addresses = capAddressResult.getOutput();
+			if (addresses) {
+				addressToUse = addresses[0];								
+				houseNumberStartString = "" + addressToUse.getHouseNumberStart();
+				var proxyBus1 = aa.proxyInvoker.newInstance("com.accela.aa.aamain.externalapo.ExternalAPOBusiness").getOutput();   			    			   
+				externSettingInterface = proxyBus1.getSettings(aa.getServiceProviderCode(), "EXTERNAL_ADDRESS_SOURCE");
+				addressAdded = false; newAddress=null;
+				searchRefAddressModel = aa.proxyInvoker.newInstance("com.accela.aa.aamain.address.RefAddressModel").getOutput();
+				searchRefAddressModel.setStreetName(addressToUse.getStreetName());
+				searchRefAddressModel.setUnitStart(addressToUse.getUnitStart());
+				searchRefAddressModel.setStreetDirection(addressToUse.getStreetDirection());
+				searchRefAddressModel.setStreetSuffix(addressToUse.getStreetSuffix());
+				searchRefAddressModel.setStreetSuffixdirection(addressToUse.getStreetSuffixdirection());
+				searchRefAddressModel.setHouseNumberStart(addressToUse.getHouseNumberStart());
+				var refAddressDataPage = proxyBus1.getAddressBySearchKeys(aa.getServiceProviderCode(), "ADMIN", false,  searchRefAddressModel, externSettingInterface, null);
+				r = refAddressDataPage.result;
+				if (r != null) {
+					addrArr = r.toArray();
+			        if (addrArr  != null) {    
+			            for (var index = 0; index < addrArr.length; index++) {
+					        var refAddressModel = addrArr[index];
+					        refAddressModel.setAuditID("ADMIN");
+					        if (addrArr.length==1){
+								refAddressModel.setPrimaryFlag("Y");
+							}
+					        createResult = aa.address.createAddressWithRefAddressModel(capId, refAddressModel);				       			
+							if (createResult.getSuccess()) {
+								addressAdded = true;
+								newAddress = refAddressModel;
+								break; // only add one
+							}
+							else logDebug("Error adding address to record " + createResult.getErrorMessage());
+			            }
+			        }
+				}
+				// get parcel and add it
+				if (addressAdded) {			
+					aa.address.removeAddress(capId, addressToUse.getAddressId());
+					var parcelListResult = aa.parcel.getParceListForAdmin(null,houseNumberStartString,null,addressToUse.getStreetDirection(),addressToUse.getStreetName(),addressToUse.getStreetSuffix(),null,null,addressToUse.getCity(),null);
+					if(parcelListResult.getSuccess()) {
+						var parcelArray = parcelListResult.getOutput();
+						if(parcelArray != null) { 	
+							parcelToUse = null;
+							if (parcelArray.length > 0) parcelToUse = parcelArray[0]
+							for (var i=0;i<parcelArray.length;i++) {
+								thisParcel = parcelArray[i];			
+								if (addressToUse.getStreetSuffixdirection() != null) {
+									pRefAddressModel = thisParcel.getRAddressModel();
+									parcelRefAddressStreetSuffixDir = pRefAddressModel.getStreetSuffixdirection();
+									if (addressToUse.getStreetSuffixdirection != parcelRefAddressStreetSuffixDir) 
+										continue;
+								}
+								if (thisParcel.getParcelModel().getPrimaryParcelFlag() == "Y") parcelToUse = thisParcel
+							}
+							var capParModel = aa.parcel.warpCapIdParcelModel2CapParcelModel(capId,parcelToUse.getParcelModel()).getOutput()
+							var createPMResult = aa.parcel.createCapParcel(capParModel);
+							if (createPMResult.getSuccess()) {
+								logDebug("created CAP Parcel");
+								copyParcelGisObjects();
+							}
+							else { logDebug("Failed to create the cap Parcel " + createPMResult.getErrorMessage()); }
+						}
+					}
+				}
+			}
+		}
+	}
+}
+function applicationNewAlarmCoAlarms()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "kcoffey@fortlauderdale.gov";
+
+	//for (con in conArray)
+	//{
+	//	if (!matches(conArray[con].email, null, undefined, ""))
+	//	{
+	//		conEmail += conArray[con].email + "; ";
+	//	}
+	//}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "ALM-NEW ALARM COMPANY", emailParams, reportFile);
+	}
+	
+}
+function applicationSubmittedAlarms()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "ALM-APPLICATION SUBMITTAL", emailParams, reportFile);
+	}
+	
+}
+function applicationSubmittedBT()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BT-APPLICATION SUBMITTAL", emailParams, reportFile);
+	}
+	
+}
+function applicationSubmittedParks()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PR-APPLICATION SUBMITTAL", emailParams, reportFile);
+	}
+	
+}
+function applicationSubmittedPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-APPLICATION SUBMITTAL", emailParams, reportFile);
+	}
+	
+}
+function applicationSubmittedPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-APPLICATION SUBMITTAL", emailParams, reportFile);
+	}
+	
+}
+function applicationSubmittedTAM()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "TAM-APPLICATION SUBMITTAL", emailParams, reportFile);
+	}
+	
+}
+function btLicEditExpInfo(pExpStatus, pExpDate, cCapId)
+{
+	//Edits expiration status and/or date
+	//Needs licenseObject function
+	//06SSP-00238
+	var lic = new licenseObject(null, cCapId);
+	if (pExpStatus != null)
+	{
+		lic.setStatus(pExpStatus);
+	}	
+	if (pExpDate != null)
+	{
+		lic.setExpiration(pExpDate);
+	}
+}
+function businessTaxCategoryPay(itemCap, exemptType) 
+{
+	var gmPay = aa.appSpecificTableScript.getAppSpecificTableGroupModel(itemCap).getOutput();
+	var taPay = gmPay.getTablesArray();
+	var taiPay = taPay.iterator();
+	while (taiPay.hasNext())
+	{
+		var tsmPay = taiPay.next();
+		var tnPay = tsmPay.getTableName();
+		if (tnPay.equals("CATEGORY"))
+		{
+			if (!tsmPay.rowIndex.isEmpty())
+			{
+				logDebug("Table Empty: " + tsmPay.rowIndex.isEmpty());
+				var tsmfldiPay = tsmPay.getTableField().iterator();
+				var tsmcoliPay = tsmPay.getColumns().iterator();
+				var feeCode = "";
+				var endDate = new Date();
+				var eDate = "";
+				var feeSeqArr = new Array();
+				var payPeriodArr = new Array();
+				var vetCount = 0;
+				while (tsmfldiPay.hasNext())
+				{
+					if (!tsmcoliPay.hasNext())
+					{
+						if (matches(eDate, "", undefined, null) || startDate < endDate)
+						{
+							if(exemptType == "Partial")
+							{
+								var fSeq = addFee(feeCode, "BT", "FINAL", .5, "N", itemCap);
+								feeSeqArr.push(aa.util.parseLong(fSeq));
+								payPeriodArr.push("FINAL");
+							}
+							else if(!matches(exemptType, "Veteran", "Partial"))
+							{
+								var fSeq = addFee(feeCode, "BT", "FINAL", 1, "N", itemCap);
+								feeSeqArr.push(aa.util.parseLong(fSeq));
+								payPeriodArr.push("FINAL");
+							}
+							if(exemptType == "Veteran")
+							{
+								var fSeq = addFee(feeCode, "BT", "FINAL", 1, "N", itemCap);
+								vetCount++;
+								fItem = aa.fee.getFeeItemByPK(itemCap, fSeq).getOutput();
+								var fAmt = fItem.getFee();
+								logDebug("Fee Amt: " + fAmt);
+								if (parseFloat(fAmt) < 50.00)
+								{
+									var editResult = aa.finance.removeFeeItem(itemCap, fSeq);
+									vetCount--;
+									if (editResult.getSuccess()) 
+									{
+										logDebug("Removed existing Fee Item");
+									}
+									else 
+									{
+										logDebug("**ERROR: removing fee item");
+									}
+								}
+								else
+								{
+									feeSeqArr.push(aa.util.parseLong(fSeq));
+									payPeriodArr.push("FINAL");
+								}
+								logDebug("Vet Count: " + vetCount);
+							}
+						}
+						var tsmcoliPay = tsmPay.getColumns().iterator();
+						feeCode = "";
+						endDate = new Date();
+						eDate = "";
+					}
+					var tcolPay = tsmcoliPay.next();
+					var tvalPay = tsmfldiPay.next();
+					if (tcolPay.getColumnName().equals("Category"))
+					{
+						feeCode = tvalPay.substring(0, 6);
+					}
+					if (tcolPay.getColumnName().equals("End Date"))
+					{
+						eDate = tvalPay;
+						if(!matches(eDate, "", undefined, null))
+						{
+							endDate = new Date(tvalPay);
+						}
+					}
+				}
+				if (matches(eDate, "", undefined, null) || startDate < endDate)
+				{
+					if(exemptType == "Partial")
+					{
+						var fSeq = addFee(feeCode, "BT", "FINAL", .5, "N", itemCap);
+						feeSeqArr.push(aa.util.parseLong(fSeq));
+						payPeriodArr.push("FINAL");
+					}
+					else if(!matches(exemptType, "Veteran", "Partial"))
+					{
+						var fSeq = addFee(feeCode, "BT", "FINAL", 1, "N", itemCap);
+						feeSeqArr.push(aa.util.parseLong(fSeq));
+						payPeriodArr.push("FINAL");
+					}
+					if(exemptType == "Veteran")
+					{
+						var fSeq = addFee(feeCode, "BT", "FINAL", 1, "N", itemCap);
+						vetCount++;
+						fItem = aa.fee.getFeeItemByPK(itemCap, fSeq).getOutput();
+						var fAmt = fItem.getFee();
+						logDebug("Last Fee Amt: " + fAmt);
+						if (parseFloat(fAmt) < 50.00)
+						{
+							var editResult = aa.finance.removeFeeItem(itemCap, fSeq);
+							vetCount--;
+							if (editResult.getSuccess()) 
+							{
+								logDebug("Removed existing Fee Item");
+							}
+							else 
+							{
+								logDebug("**ERROR: removing fee item");
+							}
+						}
+						else
+						{
+							feeSeqArr.push(aa.util.parseLong(fSeq));
+							payPeriodArr.push("FINAL");
+						}
+						logDebug("Last Vet Count: " + vetCount);
+						if(vetCount > 0)
+						{
+							var fSeq = addFee("BT_VET", "BT", "FINAL", 1, "N", itemCap);
+							feeSeqArr.push(aa.util.parseLong(fSeq));
+							payPeriodArr.push("FINAL");
+						}
+					}
+					aa.finance.createInvoice(itemCap, feeSeqArr, payPeriodArr);
+				}
+			}
+		}
+	}
+}
+function businessTaxRenewalIssuanceAfter()
+{
+	var projReview = aa.cap.getProjectByChildCapID(capId, "Renewal", "Review");
+	if(projReview.getSuccess())
+	{
+		var projRev = projReview.getOutput();
+		for (var pr in projRev)
+		{
+			parentCapId = projRev[pr].getProjectID();
+			projRev[pr].setStatus("Complete");
+			var updateResult = aa.cap.updateProject(projRev[pr]);
+		}
+	}
+	var proj = aa.cap.getProjectByChildCapID(capId, "Renewal", "Complete");
+	if(proj.getSuccess())
+	{
+		var proj = proj.getOutput();
+		for(var p in proj)
+		{
+			pCapId = proj[p].getProjectID();
+			parentCapId = aa.cap.getCapID(pCapId.getID1(), pCapId.getID2(), pCapId.getID3()).getOutput();
+			altId = parentCapId.getCustomID();
+			var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(parentCapId).getOutput();
+			var ta = gm.getTablesArray();
+			var tai = ta.iterator();
+			while (tai.hasNext()) 
+			{
+				var tsm = tai.next();
+				var tn = tsm.getTableName() + "";
+				removeASITable(tn, parentCapId);
+			}
+			var capContactResult = aa.people.getCapContactByCapID(parentCapId);
+			if (capContactResult.getSuccess()) 
+			{
+				var Contacts = capContactResult.getOutput();
+				for (yy in Contacts) 
+				{
+					var peop = Contacts[yy].getPeople();
+					var conSeqNum = peop.getContactSeqNumber();
+					aa.people.removeCapContact(parentCapId, conSeqNum);
+				}
+			}
+			copyContacts(capId, parentCapId);
+			copyASIFields(capId, parentCapId);
+			copyASITables(capId, parentCapId);
+			//updateAppStatus("Issued", "Updated by WTUA script");
+			//updateTask("Business Tax Review", "Approved", "Updated by WTUA script", "Updated by WTUA script", "BT_REN", capId);
+			//updateTask("Issuance", "Issued", "Updated by WTUA script", "Updated by WTUA script", "BT_REN", capId);
+			aa.cap.updateAccessByACA(capId, "N");
+			var expDate = "09/30/" + (startDate.getFullYear() + 1);
+			btLicEditExpInfo("Active", expDate, parentCapId);
+			updateAppStatus("Active", "Set to Active by WTUA script.", parentCapId);
+			updateTask("Receipt", "Active", "Set to Active by WTUA script.", "Set to Active by WTUA script.", "BT_RECPT", parentCapId);
+			var emailParams = aa.util.newHashtable();
+			reportParams = aa.util.newHashtable();
+			reportParams.put("Record ID", altId);
+			reportName = "Business Tax Receipt";
+			reportModule = "BusinessTax";
+			reportFile = new Array();
+			var conArray = getContactArray();
+			var conEmail = "";
+			reportFile.push(reportRunSave(reportName, false, false, true, reportModule, reportParams));
+			for (con in conArray)
+			{
+				if (conArray[con].contactType == "Business")
+				{
+					conEmail = conArray[con].email;
+					addParameter(emailParams, "$$altID$$", altId);
+					addParameter(emailParams, "$$capName$$", appTypeArray[1]);
+					getPrimaryAddressLineParam4Notification(emailParams);
+					if (conEmail != null)
+					{
+						sendNotification("noreply@fortlauderdale.com", conEmail, "", "BT-RECEIPT ISSUANCE", emailParams, reportFile, parentCapId);
+					}
+					else
+					{
+						updateAppStatus("Need Mail", "Updated by ASA script", capId);
+						logDebug("<b>" + appTypeArray[1] + " has no email address.</b>");
+					}
+				}
+			}
+		}
+	}
+}
+function businessTaxRenewalPayAfter()
+{
+	var projReview = aa.cap.getProjectByChildCapID(capId, "Renewal", "Review");
+	logDebug("Review " + projReview.getSuccess());
+	if(projReview.getSuccess())
+	{
+		var projRev = projReview.getOutput();
+		for (var pr in projRev)
+		{
+			parentCapId = projRev[pr].getProjectID();
+			projRev[pr].setStatus("Complete");
+			var updateResult = aa.cap.updateProject(projRev[pr]);
+		}
+	}
+	var proj = aa.cap.getProjectByChildCapID(capId, "Renewal", "Complete");
+	logDebug("Proj " + proj.getSuccess());
+	if(proj.getSuccess())
+	{
+		var proj = proj.getOutput();
+		for(var p in proj)
+		{
+			pCapId = proj[p].getProjectID();
+			parentCapId = aa.cap.getCapID(pCapId.getID1(), pCapId.getID2(), pCapId.getID3()).getOutput();
+			altId = parentCapId.getCustomID();
+			var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(parentCapId).getOutput();
+			var ta = gm.getTablesArray();
+			var tai = ta.iterator();
+			while (tai.hasNext()) 
+			{
+				var tsm = tai.next();
+				var tn = tsm.getTableName() + "";
+				removeASITable(tn, parentCapId);
+			}
+			var capContactResult = aa.people.getCapContactByCapID(parentCapId);
+			if (capContactResult.getSuccess()) 
+			{
+				var Contacts = capContactResult.getOutput();
+				for (yy in Contacts) 
+				{
+					var peop = Contacts[yy].getPeople();
+					var conSeqNum = peop.getContactSeqNumber();
+					aa.people.removeCapContact(parentCapId, conSeqNum);
+				}
+			}
+			copyContacts(capId, parentCapId);
+			copyASIFields(capId, parentCapId);
+			copyASITables(capId, parentCapId);
+			updateAppStatus("Issued", "Updated by PRA script");
+			updateTask("Business Tax Review", "Approved", "Updated by PRA script", "Updated by PRA script", "BT_REN", capId);
+			updateTask("Issuance", "Issued", "Updated by PRA script", "Updated by PRA script", "BT_REN", capId);
+			aa.cap.updateAccessByACA(capId, "N");
+			var expDate = "09/30/" + (startDate.getFullYear() + 1);
+			btLicEditExpInfo("Active", expDate, parentCapId);
+			updateAppStatus("Active", "Set to Active by PRA script.", parentCapId);
+			updateTask("Receipt", "Active", "Set to Active by PRA script.", "Set to Active by PRA script.", "BT_RECPT", parentCapId);
+			var emailParams = aa.util.newHashtable();
+			reportParams = aa.util.newHashtable();
+			reportParams.put("Record ID", altId);
+			reportName = "Business Tax Receipt";
+			reportModule = "BusinessTax";
+			reportFile = new Array();
+			var conArray = getContactArray();
+			var conEmail = "";
+			reportFile.push(reportRunSave(reportName, false, false, true, reportModule, reportParams));
+			for (con in conArray)
+			{
+				if (conArray[con].contactType == "Business")
+				{
+					conEmail = conArray[con].email;
+					addParameter(emailParams, "$$altID$$", altId);
+					addParameter(emailParams, "$$capName$$", appTypeArray[1]);
+					getPrimaryAddressLineParam4Notification(emailParams);
+					if (conEmail != null)
+					{
+						sendNotification("noreply@fortlauderdale.com", conEmail, "", "BT-RECEIPT ISSUANCE", emailParams, reportFile, parentCapId);
+					}
+					else
+					{
+						updateAppStatus("Need Mail", "Updated by ASA script", capId);
+						logDebug("<b>" + appTypeArray[1] + " has no email address.</b>");
+					}
+				}
+			}
+		}
+	}
+}
+function catLookup(stdChoice, stdValue) 
+{
+	var bizDomScriptResult = aa.bizDomain.getBizDomainByValue(stdChoice,stdValue);
+   	if (bizDomScriptResult.getSuccess())
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+function checkForDocCat(vDocCat, capId)
+{
+	docListResult = aa.document.getCapDocumentList(capId, currentUserID);
+	varWasUploaded = false;
+	if (docListResult.getSuccess())
+	{ 
+		docListArray = docListResult.getOutput();
+		for(x in docListArray)
+		{
+			logDebug("Doc Category: " + docListArray[x].getDocCategory());
+			if(docListArray[x].getDocCategory() == vDocCat)
+			{
+				varWasUploaded = true;
+			}
+		}
+
+	}
+	return varWasUploaded;
+}
+function checkForLastDocCat(vDocCat, capId)
+{
+	//function looks at the last date any document(s) was uploaded and evaluates if matches the specified doc type
+	docListResult = aa.document.getCapDocumentList(capId ,currentUserID);
+	varWasUploaded = false;
+	if (docListResult.getSuccess()) 
+	{ 
+		docListArray = docListResult.getOutput();
+		varDocLast = docListArray.length;
+		varLastPos = varDocLast -1;
+		docLastCat = docListArray[varLastPos].getDocCategory();
+		docLastDate = docListArray[varLastPos].getFileUpLoadDate() + " ";
+		dIndex = docLastDate.indexOf(" ");
+		dDateCompare = docLastDate.substring(0, dIndex);
+		for(x in docListArray)
+		{
+			inputDate = docListArray[x].getFileUpLoadDate() + " " ;
+			inputIndex = inputDate.indexOf(" ")
+			inputCompare = inputDate.substring(0,inputIndex );
+			if(inputCompare == dDateCompare)
+			{
+				if(docListArray[x].getDocCategory() == vDocCat)
+				{
+					varWasUploaded = true;
+				}
+			}
+		}
+
+	}
+	return varWasUploaded;
+}
+function checkNewViolationAdded(inspectionId)
+{
+	var existingIdCount = 0;
+	var newIdCount = 0;
+	var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(capId).getOutput();
+	var ta = gm.getTablesArray();
+	var tai = ta.iterator();
+	while (tai.hasNext())
+	{
+		var tsm = tai.next();
+		var tn = tsm.getTableName();
+		if (tn.equals("VIOLATIONS"))
+		{
+			if (!tsm.rowIndex.isEmpty())
+			{
+				var tsmfldi = tsm.getTableField().iterator();
+				var tsmcoli = tsm.getColumns().iterator();
+				existingIdCount++;
+				while (tsmfldi.hasNext())
+				{
+					if (!tsmcoli.hasNext())
+					{
+						existingIdCount++;
+						var tsmcoli = tsm.getColumns().iterator();
+					}
+					var tcol = tsmcoli.next();
+					var tval = tsmfldi.next();
+				}
+			}
+		}
+	}
+	logDebug("Existing " + existingIdCount);
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						if(gsArray[loopk].getGuideType().contains("ENF_Violation Checklist"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									newIdCount++;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	logDebug("New " + newIdCount);
+	if(newIdCount > existingIdCount)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+function closeQAlertServiceRequest(serviceRequestID, comment) {
+	ServiceRequestServiceURL = "http://10.11.30.23:8090/ServiceRequestService/CloseService.svc";		
+	xmlRequest = '';
+	xmlRequest += '<?xml version="1.0" encoding="UTF-8"?>';
+	xmlRequest += '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">'
+	xmlRequest += ' <soapenv:Header/>'
+	xmlRequest += '  <soapenv:Body>'
+	xmlRequest += '  <tem:closeServiceRequest>'
+	xmlRequest += '  <tem:id>' + serviceRequestID + '</tem:id>'
+	xmlRequest += '  <tem:comment>'  + comment  + '</tem:comment>'
+	xmlRequest += '  </tem:closeServiceRequest>'
+	xmlRequest += '</soapenv:Body>'
+	xmlRequest +='</soapenv:Envelope>';	
+	
+	respResult= aa.util.httpPostToSoapWebService(ServiceRequestServiceURL, xmlRequest, "", "", "http://tempuri.org/ICloseService/closeServiceRequest");		
+	if (respResult.getSuccess()) {
+		logDebug("Success");
+		resp = respResult.getOutput();
+		logDebug(resp);
+	}
+	else {
+		logDebug(respResult.getErrorMessage());
+	}
+}
+	
+
+function createAbatementCases(inspectionId)
+{
+	var compByDate = new Array();
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var gsItems = gsArray[loopk].getItems().toArray();
+						for (var loopi in gsItems)
+						{
+							if(gsItems[loopi].getGuideItemStatus() == "Hearing")
+							{
+								var violationType = "";
+								var recName = "";
+								if(appTypeArray[1] == "Code Case")
+								{
+									violationType = "CODE Violation";
+									recName = "CODE Hearing";
+								}
+								else if(appTypeArray[1] == "Building Code Case")
+								{
+									violationType = "BLD Violation";
+									recName = "BLD Hearing";
+								}
+								else
+								{
+									violationType = "FIRE Violation";
+									recName = "FIRE Hearing";
+								}
+								var violationCapId = createChild("Enforcement", "Violation", violationType, "NA", "Violation-" + recName);
+								if (violationCapId != null)
+								{
+									updateWorkDesc(gsItems[loopi].getGuideItemComment(), violationCapId);
+									//copyASIFields(capId, violationCapId);
+									//apo
+									copyOwner(capId, violationCapId);
+									copyParcelGisObjects();
+									/*
+									asi - comply by date from checklist comply by date
+									asi - violation code from checklist violation code
+									asi - ordinance from checklist ordinance
+									var tempCapId = capId;
+									capId = violationCapId;
+									if (violationType == "Code")
+									{
+										updateAppStatus("Re-Inspection", "Closed by IRSA");
+									}
+									//closeTask("Violation", "Citation", "Closed by IRSA", "Closed by IRSA");
+									capId = tempCapId;
+									*/
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+function createCitationViolation(inspectionId)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var gsItems = gsArray[loopk].getItems().toArray();
+						for (var loopi in gsItems)
+						{
+							if(gsItems[loopi].getGuideItemStatus() == "Citation")
+							{
+								var citViolExists = false;
+								var violationCitation = "";
+								var complyByDate = "";
+								var violationCode = "";
+								var violationOrdinance = "";
+								var violationToWit = "";
+								var violationCorrective = "";
+								var guideComment = gsItems[loopi].getGuideItemComment();
+								if(guideComment.indexOf("~") > 0)
+								{
+									commentArray = guideComment.split("~");
+									var arrLength = commentArray.length;
+									if(parseInt(arrLength) == 2)
+									{
+										vCode = commentArray[0].trim();
+										if(vCode.length() > 20)
+										{
+											vCode = vCode.substr(0, 20);
+										}
+										violationCode = vCode.trim();
+										violationOrdinance = commentArray[1].trim();
+									} 
+									else if(parseInt(arrLength) == 3)
+									{
+										vCode = commentArray[0].trim();
+										if(vCode.length() > 20)
+										{
+											vCode = vCode.substr(0, 20);
+										}
+										violationCode = vCode.trim();
+										violationOrdinance = commentArray[1].trim();
+										violationCorrective = commentArray[2].trim();
+									}
+									else
+									{
+										vCode = commentArray[0].trim();
+										if(vCode.length() > 20)
+										{
+											vCode = vCode.substr(0, 20);
+										}
+										violationCode = vCode.trim();
+										violationOrdinance = commentArray[1].trim();
+										violationCorrective = commentArray[2].trim();
+										violationToWit = commentArray[3].trim();
+									}
+								}
+								else
+								{
+									violationOrdinance = guideComment.trim();
+									
+								}
+
+								var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+								if(ASISubGroups)
+								{
+									for(var k = 0; k < ASISubGroups.size(); k++) 
+									{
+										var ASISubGroup = ASISubGroups.get(k);
+										if(ASISubGroup) 
+										{
+											var ASIModels =  ASISubGroup.getAsiList();
+											if(ASIModels) 
+											{
+												for(var m = 0; m < ASIModels.size(); m++) 
+												{
+													var ASIModel = ASIModels.get(m);
+													if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+													{
+														complyByDate = ASIModel.getAttributeValue();
+													}
+													if(ASIModel && ASIModel.getAsiName() == "Citation Number" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+													{
+														violationCitation = ASIModel.getAttributeValue();
+													}
+												}
+											}
+										}
+									}
+								}
+								var getCapResult = aa.cap.getChildByMasterID(capId);
+								if (getCapResult.getSuccess())
+								{
+									var childArray = getCapResult.getOutput();
+									if (childArray.length)
+									{
+										var childCapId;
+										var capTypeStr = "";
+										var childTypeArray;
+										for (xx in childArray)
+										{
+											childCapId = childArray[xx].getCapID();
+											capTypeStr = aa.cap.getCap(childCapId).getOutput().getCapType().toString();
+											childTypeArray = capTypeStr.split("/");
+											var existCitation = "";
+											if(childTypeArray[2] == "Citation")
+											{
+												existCitation == getAppSpecific("Citation Number", childCapId);
+											}
+											if(violationCitation == existCitation)
+											{
+												citViolExists = true;
+											}
+										}
+									}
+								}
+								if(!citViolExists)
+								{
+									var violationCapId = createChild("Enforcement", "Violation", "Citation", "NA", "Violation-Citation");
+									if (violationCapId != null)
+									{
+										updateWorkDesc(gsItems[loopi].getGuideItemComment(), violationCapId);
+										copyOwner(capId, violationCapId);
+										copyParcelGisObjects();
+										editAppSpecific("Citation Number", violationCitation, violationCapId);
+										editAppSpecific("Comply By Date", complyByDate, violationCapId);
+										editAppSpecific("Violation Code", violationCode, violationCapId);
+										editAppSpecific("Corrective Action", violationCitation, violationCapId);
+										editAppSpecific("ToWit", violationToWit, violationCapId);
+										editAppSpecific("Ordinance", violationOrdinance, violationCapId);
+										/*
+										var tempCapId = capId;
+										capId = violationCapId;
+										if (violationType == "Code")
+										{
+											updateAppStatus("Re-Inspection", "Closed by IRSA");
+										}
+										//closeTask("Violation", "Citation", "Closed by IRSA", "Closed by IRSA");
+										capId = tempCapId;
+										*/
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+function createFireCodeCase(inspectionId)
+{
+	var inspModel = "";
+	var gs = "";
+	var complyByDate = "";
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (var i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				inspModel = inspArray[i].getInspection();
+			}
+		}
+	}
+	var caseCapId = createChild("Enforcement", "Fire Code Case", "NA", "NA", "Fire Code Case");
+	if (caseCapId != null)
+	{
+		copyOwner(capId, caseCapId);
+		copyParcelGisObjects();
+		var result = aa.inspection.copyInspectionWithGuideSheet(capId, caseCapId, inspModel);
+		var insp = aa.inspection.getInspections(caseCapId);
+		if (insp.getSuccess())
+		{
+			var inspArray = insp.getOutput();
+			for (var i in inspArray)
+			{
+				caseInspNum = inspArray[i].getIdNumber();
+				caseInspModel = inspArray[i].getInspection();
+				var gs = caseInspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("Failed"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() == "In Violation")
+								{
+									var violationID = gsItems[loopi].getGuideItemText();
+									if(violationID == "Comply By Date")
+									{
+										var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+										if(ASISubGroups)
+										{
+											for(var k = 0; k < ASISubGroups.size(); k++) 
+											{
+												var ASISubGroup = ASISubGroups.get(k);
+												if(ASISubGroup) 
+												{
+													var ASIModels =  ASISubGroup.getAsiList();
+													if(ASIModels) 
+													{
+														for(var m = 0; m < ASIModels.size(); m++) 
+														{
+															var ASIModel = ASIModels.get(m);
+															if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+															{
+																complyByDate = ASIModel.getAttributeValue();
+															}
+														}
+													}
+												}
+											}
+										}
+									}
+									else
+									{
+										var violationType = "FIRE Violation";
+										var recName = "FIRE Hearing";
+										var violationCapId = createChild("Enforcement", "Violation", violationType, "NA", "Violation-" + recName, caseCapId);
+										if (violationCapId != null)
+										{
+											updateWorkDesc(gsItems[loopi].getGuideItemComment(), violationCapId);
+											//copyASIFields(capId, violationCapId);
+											//apo
+											copyOwner(capId, violationCapId);
+											copyParcelGisObjects();
+											/*
+											asi - comply by date from checklist comply by date
+											asi - violation code from checklist violation code
+											asi - ordinance from checklist ordinance
+											var tempCapId = capId;
+											capId = violationCapId;
+											if (violationType == "Code")
+											{
+												updateAppStatus("Re-Inspection", "Closed by IRSA");
+											}
+											//closeTask("Violation", "Citation", "Closed by IRSA", "Closed by IRSA");
+											capId = tempCapId;
+											*/
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				addFireViolationTable(caseInspNum, complyByDate, caseCapId);
+			}
+		}
+	}
+}
+
+function createPendingInspectionVacation(iGroup, iType, itemCap)
+{
+	var itmResult = aa.inspection.getInspectionType(iGroup, iType)
+	if (!itmResult.getSuccess())
+	{
+		logDebug("**WARNING error retrieving inspection types: " + itmResult.getErrorMessage);
+		return false;
+	}
+	var itmArray = itmResult.getOutput();
+	if (!itmArray)
+	{
+		logDebug("**WARNING could not find any matches for inspection group " + iGroup + " and type " + iType);
+		return false;
+	}
+	var itmSeq = null;
+	for (thisItm in itmArray)
+	{
+		var it = itmArray[thisItm];
+		if (it.getGroupCode().toUpperCase().equals(iGroup.toUpperCase()) && it.getType().toUpperCase().equals(iType.toUpperCase()))
+		{
+			itmSeq = it.getSequenceNumber();
+		}
+	}
+	if (!itmSeq)
+	{
+		logDebug("**WARNING could not find an exact match for inspection group " + iGroup + " and type " + iType);
+		return false;
+	}
+	var inspModel = aa.inspection.getInspectionScriptModel().getOutput().getInspection();
+	var activityModel = inspModel.getActivity();
+	activityModel.setInspSequenceNumber(itmSeq);
+	activityModel.setCapIDModel(itemCap);
+	pendingResult = aa.inspection.pendingInspection(inspModel)
+	if (pendingResult.getSuccess())
+	{
+		logDebug("Successfully created pending inspection group " + iGroup + " and type " + iType);
+		return true;
+	}
+	else
+	{
+		logDebug("**WARNING could not create pending inspection group " + iGroup + " and type " + iType + " Message: " + pendingResult.getErrorMessage());
+		return false;
+	}
+}
+function createRefContactsFromCapContactsAndLinkFTL(pCapId, contactTypeArray, ignoreAttributeArray, overwriteRefContact)
+{
+	// contactTypeArray is either null (all), or an array or contact types to process
+	// ignoreAttributeArray is either null (none), or an array of attributes to ignore when creating a REF contact
+	// replaceCapContact not implemented yet
+	// overwriteRefContact -- if true, will refresh linked ref contact with CAP contact data
+	//
+	// Version 2.0 Update:   This function will now check for the presence of a standard choice "REF_CONTACT_CREATION_RULES".
+	// This setting will determine if the reference contact will be created, as well as the contact type that the reference contact will
+	// be created with.  If this setting is configured, the contactTypeArray parameter will be ignored.   The "Default" in this standard
+	// choice determines the default action of all contact types.   Other types can be configured separately.
+	// Each contact type can be set to "I" (create ref as individual), "O" (create ref as organization),
+	// "F" (follow the indiv/org flag on the cap contact), "D" (Do not create a ref contact), and "U" (create ref using transaction contact type).
+	var standardChoiceForBusinessRules = "REF_CONTACT_CREATION_RULES";
+	var defaultContactFlag = lookup(standardChoiceForBusinessRules, "Default");
+	var ingoreArray = new Array();
+	if (arguments.length > 1) ignoreArray = arguments[1];
+	var c = aa.people.getCapContactByCapID(pCapId).getOutput();
+	var cCopy = aa.people.getCapContactByCapID(pCapId).getOutput();  // must have two working datasets
+	for (var i in c)
+	{
+		var ruleForRefContactType = "U"; // default behavior is create the ref contact using transaction contact type
+		var con = c[i];
+		var p = con.getPeople();
+		var contactFlagForType = lookup(standardChoiceForBusinessRules, p.getContactType());
+		if (!defaultContactFlag && !contactFlagForType) //standard choice not used for rules, check the array passed
+		{
+			if (contactTypeArray && !exists(p.getContactType(), contactTypeArray))
+			{
+				continue;  //not in the contact type list.  Move along.
+			}
+		}
+		if (!contactFlagForType && defaultContactFlag) // explicit contact type not used, use the default
+	   	{
+			ruleForRefContactType = defaultContactFlag;
+	   	}
+		if (contactFlagForType) // explicit contact type is indicated
+	   	{
+			ruleForRefContactType = contactFlagForType;
+	   	}
+		if (ruleForRefContactType.equals("D"))
+		{
+			continue;
+		}
+		var refContactType = "";
+		ruleForRefContactType = "U";
+		switch(ruleForRefContactType)
+	   	{
+			case "U":
+				refContactType = p.getContactType();
+				break;
+			case "I":
+				refContactType = "Individual";
+				break;
+			case "O":
+				refContactType = "Organization";
+				break;
+			case "F":
+				if (p.getContactTypeFlag() && p.getContactTypeFlag().equals("organization"))
+				{
+					refContactType = "Organization";
+				}
+				else
+				{
+					refContactType = "Individual";
+				}
+				break;
+		}
+		logDebug("Ref Contact Type: " + refContactType);
+		logDebug("Rule: " + ruleForRefContactType);
+		var refContactNum = con.getCapContactModel().getRefContactNumber();
+		logDebug("Ref Contact num: " + refContactNum);
+		if (refContactNum)  // This is a reference contact.   Let's refresh or overwrite as requested in parms.
+	   	{
+			if (overwriteRefContact)
+	   		{
+				p.setContactSeqNumber(refContactNum);  // set the ref seq# to refresh
+				p.setContactType(refContactType);
+				var a = p.getAttributes();
+				if (a)
+				{
+					var ai = a.iterator();
+					while (ai.hasNext())
+					{
+						var xx = ai.next();
+						xx.setContactNo(refContactNum);
+					}
+				}
+				var r = aa.people.editPeopleWithAttribute(p,p.getAttributes());
+				if (!r.getSuccess())
+				{
+					logDebug("WARNING: couldn't refresh reference people : " + r.getErrorMessage());
+				}
+				else
+				{
+					logDebug("Successfully refreshed ref contact #" + refContactNum + " with CAP contact data");
+				}
+			}
+	   	}
+	   	else  //user entered the contact freehand.   Let's create or link to ref contact.
+	   	{
+			var ccmSeq = p.getContactSeqNumber();
+			var existingContact = false;
+			var p = cCopy[i].getPeople();  // get a fresh version, had to mangle the first for the search
+			if (existingContact)  // we found a match with our custom function.  Use this one.
+			{
+				refPeopleId = existingContact;
+			}
+			else  // did not find a match, let's create one
+			{
+				var a = p.getAttributes();
+				if (a)
+				{
+					var ai = a.iterator();
+					while (ai.hasNext())
+					{
+						var xx = ai.next();
+						if (ignoreAttributeArray && exists(xx.getAttributeName().toUpperCase(),ignoreAttributeArray))
+						{
+							ai.remove();
+						}
+					}
+				}
+				p.setContactType(refContactType);
+				var r = aa.people.createPeopleWithAttribute(p, a);
+				if (!r.getSuccess())
+				{
+					logDebug("WARNING: couldn't create reference people : " + r.getErrorMessage()); 
+					continue; 
+				}
+				// createPeople is nice and updates the sequence number to the ref seq
+				var p = cCopy[i].getPeople();
+				var refPeopleId = p.getContactSeqNumber();
+				logDebug("Successfully created reference contact #" + refPeopleId);
+				// Need to link to an existing public user.
+			    var getUserResult = aa.publicUser.getPublicUserByEmail(con.getEmail());
+			    if (getUserResult.getSuccess() && getUserResult.getOutput()) 
+				{
+			        var userModel = getUserResult.getOutput();
+			        logDebug("createRefContactsFromCapContactsAndLink: Found an existing public user: " + userModel.getUserID());
+					if (refPeopleId)	
+					{
+						logDebug("createRefContactsFromCapContactsAndLink: Linking this public user with new reference contact : " + refPeopleId);
+						aa.licenseScript.associateContactWithPublicUser(userModel.getUserSeqNum(), refPeopleId);
+					}
+				}
+			}
+			// now that we have the reference Id, we can link back to reference
+		    var ccm = aa.people.getCapContactByPK(pCapId,ccmSeq).getOutput().getCapContactModel();
+		    ccm.setRefContactNumber(refPeopleId);
+		    r = aa.people.editCapContact(ccm);
+		    if (!r.getSuccess())
+			{ 
+				logDebug("WARNING: error updating cap contact model : " + r.getErrorMessage()); 
+			}
+			else
+			{
+				logDebug("Successfully linked ref contact " + refPeopleId + " to cap contact " + ccmSeq);
+			}
+	    }  // end if user hand entered contact
+	}  // end for each CAP contact
+}
+function createUpdateRefLicProfAndRelate(rlpId, rlpType, pContactType, licExpDate)
+{
+	//Creates/updates a reference licensed prof from a Contact
+	var updating = false;
+	var capContResult = aa.people.getCapContactByCapID(capId);
+	if (capContResult.getSuccess())
+	{
+		conArr = capContResult.getOutput();
+	}
+	else
+	{
+		logDebug ("**ERROR: getting cap contact: " + capAddResult.getErrorMessage());
+		return false;
+	}
+	if (!conArr.length)
+	{
+		logDebug ("**WARNING: No contact available");
+		return false;
+	}
+	var newLic = getRefLicenseProf(rlpId);
+	if (newLic)
+	{
+		updating = true;
+		logDebug("Updating existing Ref Lic Prof : " + rlpId);
+	}
+	else
+	{
+		var newLic = aa.licenseScript.createLicenseScriptModel();
+	}
+	if (pContactType == null)
+	{
+		var cont = conArr[0]; //if no contact type specified, use first contact
+	}
+	else
+	{
+		var contFound = false;
+		for (yy in conArr)
+		{
+			if (pContactType.equals(conArr[yy].getCapContactModel().getPeople().getContactType()))
+			{
+				cont = conArr[yy];
+				contFound = true;
+				break;
+			}
+		}
+		if (!contFound)
+		{
+			logDebug ("**WARNING: No Contact found of type: "+pContactType);
+			return false;
+		}
+	}
+	peop = cont.getPeople();
+	addr = peop.getCompactAddress();
+	newLic.setContactFirstName(cont.getFirstName());
+	newLic.setContactLastName(cont.getLastName());
+	newLic.setBusinessName(peop.getBusinessName());
+	newLic.setAddress1(addr.getAddressLine1());
+	newLic.setAddress2(addr.getAddressLine2());
+	newLic.setAddress3(addr.getAddressLine3());
+	newLic.setCity(addr.getCity());
+	newLic.setState(addr.getState());
+	newLic.setZip(addr.getZip());
+	newLic.setPhone1(peop.getPhone1());
+	newLic.setPhone2(peop.getPhone2());
+	newLic.setEMailAddress(peop.getEmail());
+	newLic.setFax(peop.getFax());
+	newLic.setAgencyCode(aa.getServiceProviderCode());
+	newLic.setAuditDate(sysDate);
+	newLic.setAuditID(currentUserID);
+	newLic.setAuditStatus("A");
+	if (AInfo["Insurance Expiration Date"]) newLic.setInsuranceExpDate(aa.date.parseDate(AInfo["Insurance Expiration Date"]));
+	newLic.setLicenseExpirationDate(aa.date.parseDate(licExpDate));
+	newLic.setBusinessLicExpDate(aa.date.parseDate(licExpDate));
+	newLic.setLicenseType(rlpType);
+	if(addr.getState() != null)
+	{
+		newLic.setLicState(addr.getState());
+	}
+	else
+	{
+		newLic.setLicState("FL"); //default the state if none was provided
+	}
+	newLic.setStateLicense(rlpId);
+	if (updating)
+	{
+		myResult = aa.licenseScript.editRefLicenseProf(newLic);
+	}
+	else
+	{
+		myResult = aa.licenseScript.createRefLicenseProf(newLic);
+	}
+	if (myResult.getSuccess())
+	{
+		assocResult = aa.licenseScript.associateLpWithCap(capId, newLic);
+		logDebug("Successfully added/updated License No. " + rlpId + ", Type: " + rlpType);
+		logMessage("Successfully added/updated License No. " + rlpId + ", Type: " + rlpType);
+		return true;
+	}
+	else
+	{
+		logDebug("**ERROR: can't create ref lic prof: " + myResult.getErrorMessage());
+		logMessage("**ERROR: can't create ref lic prof: " + myResult.getErrorMessage());
+		return false;
+	}
+}
+function debugObject(object)
+{
+	var output = ''; 
+	for (property in object) 
+	{ 
+		output += "<font color=red>" + property + "</font>" + ': ' + "<bold>" + object[property] + "</bold>" +'; ' + "<BR>"; 
+	} 
+	logDebug(output);
+}
+function determineNumberofDocumentTypeAttached(docType)
+{
+	var docsFound = false;
+	var docCount = 0;
+ 	var docsOut = null;
+    var docList = aa.document.getDocumentListByEntity(capId, "TMP_CAP");
+	if (docList.getSuccess())
+    {
+        docsOut = docList.getOutput();
+		if(docsOut.isEmpty())
+        {
+			var docList = aa.document.getDocumentListByEntity(capId, "CAP");
+			if (docList.getSuccess())
+			{
+				docsOut = docList.getOutput();
+				if(docsOut.isEmpty())
+				{
+					docsFound = false;
+				}
+				else
+				{
+					docsFound = true;
+				}
+			}
+			else
+			{
+				docsFound = false;
+			}
+        }
+        else
+        {
+			docsFound = true;
+        }
+    }
+    else
+    {
+        docsFound = false;
+    }
+	if (docsFound)
+	{
+		attach = false;
+		docsOuti = docsOut.iterator();
+		while(docsOuti.hasNext())
+		{
+			doc = docsOuti.next();
+			docCat = doc.getDocCategory();
+			if (docCat.equals(docType))
+			{
+				docCount++;
+				attach = true;
+			}
+		}
+		if (attach)
+		{
+			return docCount;
+		}
+		else
+		{
+			return 0;
+		}
+	}
+	else
+	{
+		return 0;
+	}
+}
+function determineRevisionDocumentTypeAttachedToday(docType)
+{
+	var docsFound = false;
+	var docCount = 0;
+ 	var docsOut = null;
+    var docList = aa.document.getDocumentListByEntity(capId, "TMP_CAP");
+	if (docList.getSuccess())
+    {
+        docsOut = docList.getOutput();
+		if(docsOut.isEmpty())
+        {
+			var docList = aa.document.getDocumentListByEntity(capId, "CAP");
+			if (docList.getSuccess())
+			{
+				docsOut = docList.getOutput();
+				if(docsOut.isEmpty())
+				{
+					docsFound = false;
+				}
+				else
+				{
+					docsFound = true;
+				}
+			}
+			else
+			{
+				docsFound = false;
+			}
+        }
+        else
+        {
+			docsFound = true;
+        }
+    }
+    else
+    {
+        docsFound = false;
+    }
+	if (docsFound)
+	{
+		attach = false;
+		docsOuti = docsOut.iterator();
+		while(docsOuti.hasNext())
+		{
+			doc = docsOuti.next();
+			var uploadDate = doc.getFileUpLoadDate();
+			var upDate = new Date(uploadDate.toLocaleString());
+			logDebug(upDate);
+			logDebug(startDate);
+			var docCat = doc.getDocCategory();
+			if (docCat.equals(docType) && startDate.getDate() == upDate.getDate() 
+				&& startDate.getMonth() == upDate.getMonth() && startDate.getFullYear() == upDate.getFullYear())
+			{
+				docCount++;
+				attach = true;
+			}
+		}
+		if (attach)
+		{
+			return attach;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+function feeInvoicedAlarms()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "ALM-FEES INVOICED", emailParams, reportFile);
+	}
+}
+
+function feeInvoicedBT()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BT-FEES INVOICED", emailParams, reportFile);
+	}
+}
+
+function feeInvoicedParks()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PR-FEES INVOICED", emailParams, reportFile);
+	}
+}
+
+function feeInvoicedPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-FEES INVOICED", emailParams, reportFile);
+	}
+}
+
+function feeInvoicedPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-FEES INVOICED", emailParams, reportFile);
+	}
+}
+
+function feeInvoicedTAM()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "TAM-FEES INVOICED", emailParams, reportFile);
+	}
+}
+
+function getDRCNumbers()
+{
+	//Populate DRC# ASI on all Commercial and Residential Building Records to Planning Records ALTID for the following Planning
+	// with a file_date the is less than or = 10 years, record types (separate by comma if multiple are found)
+	//	Administrative Review
+	//	Site Plan
+	//	Plat
+	var drcNum = "";
+	var capParcelResult = aa.parcel.getParcelandAttribute(capId, null);
+	if (capParcelResult.getSuccess())
+	{ 
+		var Parcels = capParcelResult.getOutput().toArray();
+	}
+	else	
+	{ 
+		logDebug("**ERROR: getting parcels by cap ID: " + capParcelResult.getErrorMessage());
+		return false;
+	}
+	for (zz in Parcels)
+	{
+		var ParcelValidatedNumber = Parcels[zz].getParcelNumber();
+		var capAddResult = aa.cap.getCapListByParcelID(ParcelValidatedNumber, null);
+		if (capAddResult.getSuccess())
+		{ 
+			var capIdArray = capAddResult.getOutput();
+		}
+		else
+		{ 
+			logDebug("**ERROR: getting similar parcels: " + capAddResult.getErrorMessage());
+			return false;
+		}
+		for (cappy in capIdArray)
+		{
+			// skip if current cap
+			if(capId.getCustomID().equals(capIdArray[cappy].getCustomID()))	continue;
+						
+			var relCap = aa.cap.getCap(capIdArray[cappy].getCapID()).getOutput();
+			var reltypeArray = relCap.getCapType().toString().split("/");
+			if(reltypeArray[0] == "Planning" && (reltypeArray[1] == "Administrative Review" || reltypeArray[1] == "Site Plan" || reltypeArray[1] == "Plat"))
+			{
+				var relFileDate = relCap.getFileDate();
+				var fDate = new Date(relFileDate.getMonth() + "/" + relFileDate.getDayOfMonth() + "/" + relFileDate.getYear());
+				var compareDate = new Date(dateAdd((startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear(), -3650));
+				if(fDate >= compareDate)
+				{
+					var custId = capIdArray[cappy].getCustomID();
+					if(matches(drcNum, null, undefined, ""))
+					{
+						drcNum = custId;
+					}
+					else
+					{
+						drcNum += "; " + custId;
+					}
+				}
+			}
+		}
+		editAppSpecific("DRC #", drcNum);
+	}
+}
+function getLatestComplyByDate(inspectionId)
+{
+	var compByDate = new Array();
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var gsItems = gsArray[loopk].getItems().toArray();
+						for (var loopi in gsItems)
+						{
+							if(gsItems[loopi].getGuideItemStatus() != "Complied" && gsItems[loopi].getGuideItemStatus() != "New")
+							{
+								var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+								if(ASISubGroups)
+								{
+									for(var k = 0; k < ASISubGroups.size(); k++) 
+									{
+										var ASISubGroup = ASISubGroups.get(k);
+										if(ASISubGroup) 
+										{
+											var ASIModels =  ASISubGroup.getAsiList();
+											if(ASIModels) 
+											{
+												for(var m = 0; m < ASIModels.size(); m++) 
+												{
+													var ASIModel = ASIModels.get(m);
+													if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+													{
+														compByDate.push(new Date(ASIModel.getAttributeValue()));
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if(compByDate)
+		{
+			compByDate.sort
+			(
+				function(a, b)
+				{
+					var dateA = new Date(a), dateB = new Date(b)
+					return dateA - dateB //sort by date ascending
+				}
+			)
+			return compByDate[0];
+		}
+		else
+		{
+			return 0;
+		}
+	}
+	else
+	{
+		return 0;
+	}
+}
+ function getPrimaryAddressLineParam4Notification(params) {
+
+	// pass in a hashtable and it will add the additional parameters to the table
+
+logDebug("we are here");
+    var addressLine = "";
+
+	adResult = aa.address.getPrimaryAddressByCapID(capId,"Y");
+
+	if (adResult.getSuccess()) {
+
+		ad = adResult.getOutput().getAddressModel();
+		addParameter(params,"$$addressLine$$", ad.getDisplayAddress());
+	}
+	return params;
+}
+
+
+
+
+function getRecordParams4Notification(params) {
+	// pass in a hashtable and it will add the additional parameters to the table
+
+	addParameter(params, "$$altID$$", capIDString);
+	addParameter(params, "$$capName$$", capName);
+	addParameter(params, "$$capStatus$$", capStatus);
+	addParameter(params, "$$fileDate$$", fileDate);
+	addParameter(params, "$$workDesc$$", workDescGet(capId));
+	addParameter(params, "$$balanceDue$$", "$" + parseFloat(balanceDue).toFixed(2));
+	addParameter(params, "$$capTypeAlias$$", aa.cap.getCap(capId).getOutput().getCapType().getAlias());
+	
+	var addressLine = "";
+
+	adResult = aa.address.getPrimaryAddressByCapID(capId,"Y");
+
+	if (adResult.getSuccess()) {
+
+		ad = adResult.getOutput().getAddressModel();
+		addParameter(params,"$$addressLine$$", ad.getDisplayAddress());
+	}
+	
+	return params;
+}
+function getWorkflowParams4Notification(params) 
+{
+	// pass in a hashtable and it will add the additional parameters to the table
+	addParameter(params, "$$wfStatus$$", wfStatus);
+	addParameter(params, "$$wfTask$$", wfTask);
+	addParameter(params, "$$wfComment$$", wfComment);
+	return params;
+}
+function isCitationEmptyViolationTable(inspectionId, checkStatus)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("ENF_Violation Checklist"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							citationEmpty = false;
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() == checkStatus)
+								{
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Citation Number" && matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															citationEmpty = true;
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					if (citationEmpty == false)
+					{
+						return false;
+					}
+					else
+					{
+						return true;
+					}
+				}
+				else
+				{
+					return false;
+				}
+			}
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+function isCitationWarnEmptyViolationTable(inspectionId, checkStatus)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("ENF_Violation Checklist"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							var citationEmpty = false;
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() == checkStatus)
+								{
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Citation Warning Number" && matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															citationEmpty = true;
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					if (citationEmpty == false)
+					{
+						return false;
+					}
+					else
+					{
+						return true;
+					}
+				}
+				else
+				{
+					return false;
+				}
+			}
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+function isCommentEmptyFireTable(inspectionId)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("FS_ACCT"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							var commentEmpty = false;
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() != "N/A")
+								{
+									var violationID = gsItems[loopi].getGuideItemText();
+									if(violationID != "Comply By Date")
+									{
+										var guideComment = gsItems[loopi].getGuideItemComment();
+										if(matches(guideComment, null, undefined, "")) 
+										{
+											commentEmpty = true;
+										}
+									}
+								}
+							}
+						}
+					}
+					if (commentEmpty == true)
+					{
+						return true;
+					}
+					else
+					{
+						return false;
+					}
+				}
+				else
+				{
+					return false;
+				}
+			}
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+function isCommentEmptyViolationTable(inspectionId)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("ENF_Violation Checklist"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							var commentEmpty = false;
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									var guideComment = gsItems[loopi].getGuideItemComment();
+									if(matches(guideComment, null, undefined, "")) 
+									{
+										commentEmpty = true;
+									}
+								}
+							}
+						}
+					}
+					if (commentEmpty == true)
+					{
+						return true;
+					}
+					else
+					{
+						return false;
+					}
+				}
+				else
+				{
+					return false;
+				}
+			}
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+function isComplyByEmptyFireTable(inspectionId)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("FS_ACCT"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							complyByEmpty = false;
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() != "N/A")
+								{
+									var violationID = gsItems[loopi].getGuideItemText();
+									if(violationID == "Comply By Date")
+									{
+										var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+										if(ASISubGroups)
+										{
+											for(var k = 0; k < ASISubGroups.size(); k++) 
+											{
+												var ASISubGroup = ASISubGroups.get(k);
+												if(ASISubGroup) 
+												{
+													var ASIModels =  ASISubGroup.getAsiList();
+													if(ASIModels) 
+													{
+														for(var m = 0; m < ASIModels.size(); m++) 
+														{
+															var ASIModel = ASIModels.get(m);
+															if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+															{
+																complyByEmpty = true;
+															}
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					if (complyByEmpty == true)
+					{
+						return true;
+					}
+					else
+					{
+						return false;
+					}
+				}
+				else
+				{
+					return false;
+				}
+			}
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+function isComplyByEmptyViolationTable(inspectionId)
+{
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						var guideType = gsArray[loopk].getGuideType();
+						if(guideType.contains("ENF_Violation Checklist"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							complyByEmpty = false;
+							for (var loopi in gsItems)
+							{
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															complyByEmpty = true;
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					if (complyByEmpty == true)
+					{
+						return true;
+					}
+					else
+					{
+						return false;
+					}
+				}
+				else
+				{
+					return false;
+				}
+			}
+		}
+	}
+	else
+	{
+		return false;
+	}
+}
+function reportRunSave(reportName, view, edmsSave, storeToDisk, reportModule, reportParams) 
+{
+	var name = "";
+	var rFile = new Array();
+	var error = "";
+	var reportModel = aa.reportManager.getReportModelByName(reportName); //get detail of report to drive logic
+	if (reportModel.getSuccess()) 
+	{
+		reportDetail = reportModel.getOutput();
+		name = reportDetail.getReportDescription();
+		if (name == null || name == "") 
+		{
+			name = reportDetail.getReportName();
+		}
+		var reportInfoModel = aa.reportManager.getReportInfoModelByName(reportName);  //get report info to change the way report runs
+		if (reportInfoModel.getSuccess()) { 
+			report = reportInfoModel.getOutput();
+			report.setModule(reportModule); 
+			report.setCapId(capId);
+			reportInfo = report.getReportInfoModel();
+			report.setReportParameters(reportParams);
+			//process parameter selection and EDMS save
+			if (edmsSave == true && view == true ) 
+			{
+				reportRun = aa.reportManager.runReport(reportParams, reportDetail);
+				showMessage = true;
+				comment(reportRun.getOutput()); //attaches report
+				if (storeToDisk == true) 
+				{
+					reportInfo.setNotSaveToEDMS(false);
+					reportResult = aa.reportManager.getReportResult(report); //attaches report
+					if (reportResult.getSuccess()) 
+					{
+						reportOut = reportResult.getOutput();
+						reportOut.setName(changeNameofAttachment(reportOut.getName()));
+						rFile = aa.reportManager.storeReportToDisk(reportOut);
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug reportFile for error message.";
+							logDebug(error);
+						}
+					} 
+					else 
+					{
+						rFile = new Array();
+						error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+						logDebug(error);
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+				}
+			} 
+			else if (edmsSave == true && view == false) 
+			{
+				reportInfo.setNotSaveToEDMS(false);
+				reportResult = aa.reportManager.getReportResult(report); //attaches report
+				if (reportResult.getSuccess()) 
+				{
+					reportOut = reportResult.getOutput();
+					reportOut.setName(changeNameofAttachment(reportOut.getName()));
+					if (storeToDisk == true) 
+					{
+						rFile = aa.reportManager.storeReportToDisk(reportOut);
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug rFile for error message.";
+							logDebug(error);
+						}
+					} 
+					else 
+					{
+						rFile = new Array();
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+					error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+					logDebug(error);
+				}
+			} 
+			else if (edmsSave == false && view == true) 
+			{
+				reportRun = aa.reportManager.runReport(reportParams, reportDetail);
+				showMessage = true;
+				comment(reportRun.getOutput());
+				if (storeToDisk == true) 
+				{
+					reportInfo.setNotSaveToEDMS(true);
+					reportResult = aa.reportManager.getReportResult(report);
+					if (reportResult.getSuccess()) 
+					{
+						reportResult = reportResult.getOutput();
+						reportResult.setName(changeNameofAttachment(reportResult.getName()));
+						rFile = aa.reportManager.storeReportToDisk(reportResult);
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug rFile for error message.";
+							logDebug(error);
+						}
+					} 
+					else 
+					{
+						rFile = new Array();
+						error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+						logDebug(error);
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+				}
+			} 
+			else if (edmsSave == false && view == false) 
+			{
+				if (storeToDisk == true) 
+				{
+					reportInfo.setNotSaveToEDMS(true);
+					reportResult = aa.reportManager.getReportResult(report);
+					if (reportResult.getSuccess()) 
+					{
+						reportResult = reportResult.getOutput();
+						reportResult.setName(changeNameofAttachment(reportResult.getName()));
+						rFile = aa.reportManager.storeReportToDisk(reportResult);
+						logDebug("Report File: " + rFile.getSuccess());
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+							logDebug("Actual Report: " + rFile);
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug rFile for error message.";
+							logDebug(error);
+						}
+					}
+					else 
+					{
+						rFile = new Array();
+						error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+						logDebug(error);
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+				}
+			}
+		} 
+		else 
+		{
+			rFile = new Array();
+			error = "Failed to get report information.  Check report name matches name in Report Manager.";
+			logDebug(error);
+		}
+	} 
+	else 
+	{
+		rFile = new Array();
+		error = "Failed to get report detail.  Check report name matches name in Report Manager.";
+		logDebug(error);
+	}
+	function changeNameofAttachment(attachmentName) 
+	{
+		rptExtLoc = attachmentName.indexOf(".");
+		rptLen = attachmentName.length();
+		ext = attachmentName.substr(rptExtLoc, rptLen);
+		attachName = name + ext;
+		return attachName
+	}	
+	return rFile;
+}
+function scheduleEngineerJobCheck(wfstr, processName, itemCap)
+{
+	//Issuance Issued for Building/Comm/Res/Misc - Engineering Review Completed the Engineering Job Check Inspection is scheduled for the next Business Day
+	var workflowResult = aa.workflow.getTaskItems(itemCap, wfstr, processName, null, null, null);
+ 	if (workflowResult.getSuccess())
+	{
+  	 	var wfObj = workflowResult.getOutput();
+		var engReviewActive = "N";
+		var engReviewComplete = "N";
+		for (i in wfObj)
+		{
+			var fTask = wfObj[i];
+			if (fTask.getTaskDescription().toUpperCase().equals(wfstr.toUpperCase()))
+			{
+				engReviewActive = fTask.getActiveFlag();
+				engReviewComplete = fTask.getCompleteFlag();				
+			}
+		}
+		if(engReviewActive == "N" && engReviewComplete == "Y")
+		{
+			var dDate = new Date(aa.calendar.getNextWorkDay(aa.date.parseDate((startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear())).getOutput().getTime());
+			var inspectorObj = null;
+			var inspTime = null;
+			var inspComm = "Scheduled via Script";
+			/*
+			var inspRes = aa.person.getUser(userId);
+			if (inspRes.getSuccess())
+			{
+				inspectorObj = inspRes.getOutput();
+			}
+			*/
+			var schedRes = aa.inspection.scheduleInspection(itemCap, inspectorObj, aa.date.parseDate((dDate.getMonth() + 1) + "/" + dDate.getDate() + "/" + dDate.getFullYear()), inspTime, "ENG-ENGINEERING JOB CHECK", inspComm);
+			if (schedRes.getSuccess())
+			{
+				logDebug("Successfully scheduled inspection : ENG-ENGINEERING JOB CHECK for " + (dDate.getMonth() + 1) + "/" + dDate.getDate() + "/" + dDate.getFullYear());
+			}
+			else
+			{
+				logDebug( "**ERROR: adding scheduling inspection (ENG-ENGINEERING JOB CHECK): " + schedRes.getErrorMessage());
+			}
+		}
+		return true;
+	}
+  	else
+  	{ 
+		logDebug("**ERROR: Failed to get workflow object: " + workflowResult.getErrorMessage());
+		return false; 
+	}
+}
+function scheduleInspectENF(itemCap, iType, DaysAhead, userId) // optional inspector ID.  This function requires dateAdd function
+{
+	// DQ - Added Optional 4th parameter inspTime Valid format is HH12:MMAM or PM (SR5110) 
+	// DQ - Added Optional 5th parameter inspComm ex. to call without specifying other options params scheduleInspection("Type",5,null,null,"Schedule Comment");
+	var inspectorObj = null;
+	var inspTime = null;
+	var inspComm = "Scheduled via Script";
+	if (arguments.length >= 5)
+	{
+	    if (arguments[4] != null)
+		{
+			inspTime = arguments[4];
+		}
+		if (arguments[5] != null)
+		{
+			inspComm = arguments[5];
+		}
+	}
+	var inspRes = aa.person.getUser(userId);
+	if (inspRes.getSuccess())
+	{
+		inspectorObj = inspRes.getOutput();
+	}
+	var schedRes = aa.inspection.scheduleInspection(itemCap, inspectorObj, aa.date.parseDate(dateAdd(null,DaysAhead)), inspTime, iType, inspComm);
+	if (schedRes.getSuccess())
+	{
+		logDebug("Successfully scheduled inspection : " + iType + " for " + dateAdd(null,DaysAhead));
+	}
+	else
+	{
+		logDebug( "**ERROR: adding scheduling inspection (" + iType + "): " + schedRes.getErrorMessage());
+	}
+}
+function schedulePendingInspectionsByGroup(group)
+{
+	var inspListArray = new Array();
+	var recordTypeLookup = appTypeArray[1] + "/" + appTypeArray[2] + "/" + appTypeArray[3];
+	var inspList = lookup(group + "PendingInspections", recordTypeLookup);
+	//logDebug(inspList);
+	if(!matches(inspList, undefined, null, ""))
+	{
+		inspListArray = inspList.split("|");
+		for (insp in inspListArray)
+		{
+			var inspType = inspListArray[insp];
+			inspsResult = aa.inspection.getInspectionListForSchedule(capId.getID1(), capId.getID2(), capId.getID3());
+			if(inspsResult.getSuccess())
+			{
+				var insp = inspsResult.getOutput();
+				for(inspect in insp)
+				{
+					var inGroup = insp[inspect].getGroupCode(); 
+					var inType = insp[inspect].getType();
+					//logDebug("inType: " + inType);
+					//logDebug("inspType: " + inspType);
+					if(inType == inspType)
+					{
+						var created = createPendingInspection(inGroup,inType);
+						//logDebug("Created: " + created);
+					}
+				}
+			}
+		}
+	}	
+	recordTypeLookup = appTypeArray[1] + "/" + appTypeArray[2] + "/*";
+	inspList = lookup(group + "PendingInspections", recordTypeLookup);
+	//logDebug(inspList);
+	if(!matches(inspList, undefined, null, ""))
+	{
+		inspListArray = inspList.split("|");
+		for (insp in inspListArray)
+		{
+			var inspType = inspListArray[insp];
+			inspsResult = aa.inspection.getInspectionListForSchedule(capId.getID1(), capId.getID2(), capId.getID3());
+			if(inspsResult.getSuccess())
+			{
+				var insp = inspsResult.getOutput();
+				for(inspect in insp)
+				{
+					var inGroup = insp[inspect].getGroupCode(); 
+					var inType = insp[inspect].getType();
+					//logDebug("inType: " + inType);
+					//logDebug("inspType: " + inspType);
+					if(inType == inspType)
+					{
+						var created = createPendingInspection(inGroup,inType);
+						//logDebug("Created: " + created);
+					}
+				}
+			}
+		}
+	}
+	recordTypeLookup = appTypeArray[1] + "/*/*";
+	inspList = lookup(group + "PendingInspections", recordTypeLookup);
+	//logDebug(inspList);
+	if(!matches(inspList, undefined, null, ""))
+	{
+		inspListArray = inspList.split("|");
+		for (insp in inspListArray)
+		{
+			var inspType = inspListArray[insp];
+			inspsResult = aa.inspection.getInspectionListForSchedule(capId.getID1(), capId.getID2(), capId.getID3());
+			if(inspsResult.getSuccess())
+			{
+				var insp = inspsResult.getOutput();
+				for(inspect in insp)
+				{
+					var inGroup = insp[inspect].getGroupCode(); 
+					var inType = insp[inspect].getType();
+					//logDebug("inType: " + inType);
+					//logDebug("inspType: " + inspType);
+					if(inType == inspType)
+					{
+						var created = createPendingInspection(inGroup,inType);
+						//logDebug("Created: " + created);
+					}
+				}
+			}
+		}
+	}
+}
+function setRecordToEditforACA(conType)
+{
+	var pubUserAAID = "";
+	var contact = "";
+	var capContactResult = aa.people.getCapContactByCapID(capId);
+    if (capContactResult.getSuccess()) 
+	{
+		var Contacts = capContactResult.getOutput();
+        for (yy in Contacts) 
+		{
+			if (conType == Contacts[yy].getCapContactModel().getPeople().getContactType())
+			{
+				contact = Contacts[yy];
+			}
+        }
+    }
+    if (!contact)
+    { 
+		logDebug("Couldn't find contact for " + conType + " - Contact Type"); 
+		return false; 
+	}
+    if (!contact.getEmail())
+    { 
+		logDebug("Couldn't find email address for " + conType + " - Contact Type"); 
+		return false; 
+	}
+    // get the reference contact ID.   We will use to connect to the new public user
+    refContactNum = contact.getCapContactModel().getRefContactNumber();
+
+    // check to see if public user exists already based on email address
+    var getUserResult = aa.publicUser.getPublicUserByEmail(contact.getEmail())
+    if (getUserResult.getSuccess() && getUserResult.getOutput()) 
+	{
+        userModel = getUserResult.getOutput();
+        pubUserAAID = "PUBLICUSER" + userModel.getUserSeqNum();
+		logDebug("Pub User ID: " + pubUserAAID);
+	}
+	else
+	{
+		logDebug("No Public User exists wit that email address.");
+		return false;
+	}
+	var acaAccess = aa.cap.updateCreatedAccessBy4ACA(capId, pubUserAAID, "Y", "Y");
+	var capEdit = aa.cap.getCap(capId).getOutput().getCapModel();
+	capEdit.setCapClass("EDITABLE");
+	aa.cap.editCapByPK(capEdit);
+	return true;
+}
+function ToQueryString(paramHash) {
+	var retString = "?";
+	pKeyArr = paramHash.getKeys();
+	for (var i=0;i<pKeyArr.length;i++) {
+		var pString = pKeyArr[i] + "=" + encodeURIComponent(paramHash.getItem(pKeyArr[i])); 
+		if (retString == "?") 
+			retString += pString;
+		else
+			retString += "&" + pString;
+        }
+	return retString;
+}
+function updateTowedVehicleTable(inspectionId)
+{
+	var existingIdArray = new Array();
+	var newIdArray = new Array();
+	var oldVehicleArray = new Array();
+	var vArray = new Array();
+	var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(capId).getOutput();
+	var ta = gm.getTablesArray();
+	var tai = ta.iterator();
+	while (tai.hasNext())
+	{
+		var tsm = tai.next();
+		var tn = tsm.getTableName();
+		if (tn.equals("VEHICLE TOWING"))
+		{
+			if (!tsm.rowIndex.isEmpty())
+			{
+				var tsmfldi = tsm.getTableField().iterator();
+				var tsmcoli = tsm.getColumns().iterator();
+				var vehicleNum = "";
+				var year = "";
+				var make = "";
+				var model = "";
+				var color = "";
+				var state = "";
+				var license = "";
+				var vin = "";
+				var dateTowed = "";
+				var loc = "";
+				var readOnly = "N";
+				while (tsmfldi.hasNext())
+				{
+					if (!tsmcoli.hasNext())
+					{
+						oldVehicleArray.push(vArray);
+						var tsmcoli = tsm.getColumns().iterator();
+						vArray = new Array();
+						var vehicleNum = "";
+						var year = "";
+						var make = "";
+						var model = "";
+						var color = "";
+						var state = "";
+						var license = "";
+						var vin = "";
+						var dateTowed = "";
+						var loc = "";
+					}
+					var tcol = tsmcoli.next();
+					var tval = tsmfldi.next();
+					if (tcol.getColumnName().equals("Vehicle Number"))
+					{
+						vehicleNum = tval;
+						existingIdArray.push(vehicleNum);
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vehicleNum, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Year"))
+					{
+						year = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), year, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Make"))
+					{
+						make = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), make, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Model"))
+					{
+						model = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), model, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Color"))
+					{
+						color = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), color, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("State"))
+					{
+						state = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), state, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("License"))
+					{
+						license = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), license, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("VIN"))
+					{
+						vin = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vin, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Date Towed"))
+					{
+						dateTowed = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), dateTowed, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Location"))
+					{
+						loc = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), loc, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+				}
+				oldVehicleArray.push(vArray);
+				oldVehicleArray.sort
+				(
+					function(a, b)
+					{
+						return a.ID - b.ID;
+					}
+				)
+			}
+		}
+	}
+	var newVehicleArray = new Array();
+	var readOnly = "N";
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						if(gsArray[loopk].getGuideType().contains("ENF_Towed Vehicle"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								var VehicleArray = new Array();
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									var vehicleNum = "";
+									var year = "";
+									var make = "";
+									var model = "";
+									var color = "";
+									var state = "";
+									var license = "";
+									var vin = "";
+									var dateTowed = "";
+									var loc = "";
+									
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Vehicle Number" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															vehicleNum = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Year" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															year = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Make" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															make = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Model" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															model = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Color" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															color = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "State" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															state = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "License" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															license = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "VIN" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															vin = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Date Towed" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															dateTowed = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Location" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															loc = ASIModel.getAttributeValue();
+														}
+													}
+												}
+											}
+										}
+									}
+									var fieldInfo = new asiTableValObj("Vehicle Number", vehicleNum, readOnly);
+									VehicleArray["Vehicle Number"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Year", year, readOnly);
+									VehicleArray["Year"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Make", make, readOnly);
+									VehicleArray["Make"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Model", model, readOnly);
+									VehicleArray["Model"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Color", color, readOnly);
+									VehicleArray["Color"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("State", state, readOnly);
+									VehicleArray["State"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("License", license, readOnly);
+									VehicleArray["License"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("VIN", vin, readOnly);
+									VehicleArray["VIN"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Date Towed", dateTowed, readOnly);
+									VehicleArray["Date Towed"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Location", loc, readOnly);
+									VehicleArray["Location"] = fieldInfo;
+									
+									newVehicleArray.push(VehicleArray);
+								}
+							}
+						}
+						newVehicleArray.sort
+						(
+							function(a, b)
+							{
+								return a.ID - b.ID;
+							}
+						)
+					}
+				}
+			}
+		}
+	}
+	for(var n in newVehicleArray)
+	{
+		var newV = newVehicleArray[n];
+		var exists = idExists(newV["Vehicle Number"].fieldValue);
+		logDebug("Exists: " + exists);
+		if (exists)
+		{
+			for (var o in oldVehicleArray)
+			{
+				var oldV = oldVehicleArray[o];
+				var oldID = oldV["Vehicle Number"].fieldValue;
+				var newID = newV["Vehicle Number"].fieldValue;
+				if (oldID.equals(newID))
+				{
+					var oYear = oldV["Year"].fieldValue;
+					var nYear = newV["Year"].fieldValue;
+					if (!oYear.equals(nYear))
+					{
+						oldV["Year"] = newV["Year"];
+					}
+					var omake = oldV["Make"].fieldValue;
+					var nmake = newV["Make"].fieldValue;
+					if (!omake.equals(nmake))
+					{
+						oldV["Make"] = newV["Make"];
+					}
+					var omodel = oldV["Model"].fieldValue;
+					var nmodel = newV["Model"].fieldValue;
+					if (!omodel.equals(nmodel))
+					{
+						oldV["Model"] = newV["Model"];
+					}
+					var ocolor = oldV["Color"].fieldValue;
+					var ncolor = newV["Color"].fieldValue;
+					if (!ocolor.equals(ncolor))
+					{
+						oldV["Color"] = newV["Color"];
+					}
+					var ostate = oldV["State"].fieldValue;
+					var nstate = newV["State"].fieldValue;
+					if (!ostate.equals(nstate))
+					{
+						oldV["State"] = newV["State"];
+					}
+					var license = "";
+					var olicense = oldV["License"].fieldValue;
+					var nlicense = newV["License"].fieldValue;
+					if (!olicense.equals(nlicense))
+					{
+						oldV["License"] = newV["License"];
+					}
+					var ovin = oldV["VIN"].fieldValue;
+					var nvin = newV["VIN"].fieldValue;
+					if (!ovin.equals(nvin))
+					{
+						oldV["VIN"] = newV["VIN"];
+					}
+					var odateTowed = oldV["Date Towed"].fieldValue;
+					var ndateTowed = newV["Date Towed"].fieldValue;
+					if (!matches(ndateTowed, "", undefined, null))
+					{
+						if(!matches(odateTowed, "", undefined, null))
+						{
+							if(!odateTowed.equals(ndateTowed))
+							{
+								oldV["Date Towed"] = newV["Date Towed"];
+							}
+						}
+						else
+						{
+							oldV["Date Towed"] = newV["Date Towed"];
+						}
+					}
+					var oloc = oldV["Location"].fieldValue;
+					var nloc = newV["Location"].fieldValue;
+					if (!oloc.equals(nloc))
+					{
+						oldV["Location"] = newV["Location"];
+					}
+					break;
+				}
+			}
+		}
+		else
+		{
+			vArray = new Array();
+			var nid = newV["Vehicle Number"].fieldValue;
+			var fieldInfo = new asiTableValObj("Vehicle Number", nid, readOnly);
+			vArray["Vehicle Number"] = fieldInfo;
+			
+			var nvcode = newV["Year"].fieldValue;
+			var fieldInfo = new asiTableValObj("Year", nvcode, readOnly);
+			vArray["Year"] = fieldInfo;
+			
+			var nvtype = newV["Make"].fieldValue;
+			var fieldInfo = new asiTableValObj("Make", nvtype, readOnly);
+			vArray["Make"] = fieldInfo;
+			
+			var nvdate = newV["Model"].fieldValue;
+			var fieldInfo = new asiTableValObj("Model", nvdate, readOnly);
+			vArray["Model"] = fieldInfo;
+			
+			var ncdate = newV["Color"].fieldValue;
+			var fieldInfo = new asiTableValObj("Color", ncdate, readOnly);
+			vArray["Color"] = fieldInfo;
+			
+			var cDate = newV["State"].fieldValue;
+			var fieldInfo = new asiTableValObj("State", cDate, readOnly);
+			vArray["State"] = fieldInfo;
+			
+			var nord = newV["License"].fieldValue;
+			var fieldInfo = new asiTableValObj("License", nord, readOnly);
+			vArray["License"] = fieldInfo;
+			
+			var ntowit = newV["VIN"].fieldValue;
+			var fieldInfo = new asiTableValObj("VIN", ntowit, readOnly);
+			vArray["VIN"] = fieldInfo;
+			
+			var ncoract = newV["Date Towed"].fieldValue;
+			var fieldInfo = new asiTableValObj("Date Towed", ncoract, readOnly);
+			vArray["Date Towed"] = fieldInfo;
+			
+			var warn = newV["Location"].fieldValue;
+			var fieldInfo = new asiTableValObj("Location", warn, readOnly);
+			vArray["Location"] = fieldInfo;
+			
+			oldVehicleArray.push(vArray);
+		}
+	}
+	removeASITable("VEHICLE TOWING");
+	addASITable("VEHICLE TOWING", oldVehicleArray, capId);
+	function idExists(id)
+	{
+		var ex = false;
+		for(var e in existingIdArray)
+		{
+			if(existingIdArray[e] == id)
+			{
+				ex = true;
+			}
+		}
+		if(ex)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}}
+function updateViolationTable(inspectionId)
+{
+	var existingIdArray = new Array();
+	var newIdArray = new Array();
+	var oldViolationArray = new Array();
+	var vArray = new Array();
+	var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(capId).getOutput();
+	var ta = gm.getTablesArray();
+	var tai = ta.iterator();
+	while (tai.hasNext())
+	{
+		var tsm = tai.next();
+		var tn = tsm.getTableName();
+		if (tn.equals("VIOLATIONS"))
+		{
+			if (!tsm.rowIndex.isEmpty())
+			{
+				var tsmfldi = tsm.getTableField().iterator();
+				var tsmcoli = tsm.getColumns().iterator();
+				var vId = "";
+				var vCode = "";
+				var vType = "";
+				var vDate = "";
+				var vCompByDate = "";
+				var vComplied = "";
+				var vOrdinance = "";
+				var vCorrective = "";
+				var vToWit = "";
+				var vDaily = "";
+				var readOnly = "N";
+				while (tsmfldi.hasNext())
+				{
+					if (!tsmcoli.hasNext())
+					{
+						oldViolationArray.push(vArray);
+						var tsmcoli = tsm.getColumns().iterator();
+						vArray = new Array();
+						var vId = "";
+						var vCode = "";
+						var vType = "";
+						var vDate = "";
+						var vCompByDate = "";
+						var vComplied = "";
+						var vOrdinance = "";
+						var vCorrective = "";
+						var vToWit = "";
+						var vDaily = "";
+					}
+					var tcol = tsmcoli.next();
+					var tval = tsmfldi.next();
+					if (tcol.getColumnName().equals("ID"))
+					{
+						vId = tval;
+						existingIdArray.push(vId);
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vId, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Violation Code"))
+					{
+						vId = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vId, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Violation Type"))
+					{
+						vType = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vType, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Violation Date"))
+					{
+						vDate = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vDate, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Comply By Date"))
+					{
+						vCompByDate = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vCompByDate, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Complied Date"))
+					{
+						vComplied = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vComplied, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Ordinance"))
+					{
+						vOrdinance = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vOrdinance, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Corrective Action"))
+					{
+						vCorrective = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vCorrective, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("ToWit"))
+					{
+						vToWit = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vToWit, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+					if (tcol.getColumnName().equals("Daily Amount"))
+					{
+						vDaily = tval;
+						var fieldInfo = new asiTableValObj(tcol.getColumnName(), vDaily, readOnly);
+						vArray[tcol.getColumnName()] = fieldInfo;
+					}
+				}
+				oldViolationArray.push(vArray);
+				oldViolationArray.sort
+				(
+					function(a, b)
+					{
+						return a.ID - b.ID;
+					}
+				)
+			}
+		}
+	}
+	var newViolationArray = new Array();
+	var readOnly = "N";
+	var r = aa.inspection.getInspections(capId);
+	if (r.getSuccess())
+ 	{
+		var inspArray = r.getOutput();
+		for (i in inspArray)
+		{
+			if (inspArray[i].getIdNumber() == inspectionId)
+			{
+				var inspModel = inspArray[i].getInspection();
+				var gs = inspModel.getGuideSheets();
+				if (!gs.isEmpty())
+				{
+					gsArray = gs.toArray();
+					for (var loopk in gsArray)
+					{
+						if(gsArray[loopk].getGuideType().contains("ENF_Violation Checklist"))
+						{
+							var gsItems = gsArray[loopk].getItems().toArray();
+							for (var loopi in gsItems)
+							{
+								var violationArray = new Array();
+								if(gsItems[loopi].getGuideItemStatus() != "New")
+								{
+									var violationID = gsItems[loopi].getGuideItemText();
+									newIdArray.push(violationID);
+									var fieldInfo = new asiTableValObj("ID", violationID, readOnly);
+									violationArray["ID"] = fieldInfo;
+									
+									var commentArray = new Array();
+									var violationOrdinance = "";
+									var violationCode = "";
+									var violationCorrective = "";
+									var violationToWit = "";
+									var guideComment = gsItems[loopi].getGuideItemComment();
+									if(guideComment.indexOf("~") > 0)
+									{
+										commentArray = guideComment.split("~");
+										var arrLength = commentArray.length;
+										if(parseInt(arrLength) == 2)
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+										} 
+										else if(parseInt(arrLength) == 3)
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+											violationCorrective = commentArray[2].trim();
+										}
+										else
+										{
+											vCode = commentArray[0].trim();
+											if(vCode.length() > 20)
+											{
+												vCode = vCode.substr(0, 20);
+											}
+											violationCode = vCode.trim();
+											violationOrdinance = commentArray[1].trim();
+											violationCorrective = commentArray[2].trim();
+											violationToWit = commentArray[3].trim();
+										}
+									}
+									else
+									{
+										violationOrdinance = guideComment.trim();
+										
+									}
+									var fieldInfo = new asiTableValObj("Violation Code", violationCode, readOnly);
+									violationArray["Violation Code"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Ordinance", violationOrdinance, readOnly);
+									violationArray["Ordinance"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Corrective Action", violationCorrective, readOnly);
+									violationArray["Corrective Action"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("ToWit", violationToWit, readOnly);
+									violationArray["ToWit"] = fieldInfo;								
+									
+									var violationType = gsItems[loopi].getGuideItemStatus();
+									var fieldInfo = new asiTableValObj("Violation Type", violationType, readOnly);
+									violationArray["Violation Type"] = fieldInfo;
+									
+									var violationDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+									var fieldInfo = new asiTableValObj("Violation Date", violationDate, readOnly);
+									violationArray["Violation Date"] = fieldInfo;
+									
+									var compByDate = new Date();
+									var violationWarning = "";
+									var violationCitation = "";
+									var ASISubGroups = gsItems[loopi].getItemASISubgroupList();
+									if(ASISubGroups)
+									{
+										for(var k = 0; k < ASISubGroups.size(); k++) 
+										{
+											var ASISubGroup = ASISubGroups.get(k);
+											if(ASISubGroup) 
+											{
+												var ASIModels =  ASISubGroup.getAsiList();
+												if(ASIModels) 
+												{
+													for(var m = 0; m < ASIModels.size(); m++) 
+													{
+														var ASIModel = ASIModels.get(m);
+														if(ASIModel && ASIModel.getAsiName() == "Comply By Date" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															compByDate = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Citation Warning Number" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															violationWarning = ASIModel.getAttributeValue();
+														}
+														if(ASIModel && ASIModel.getAsiName() == "Citation Number" && !matches(ASIModel.getAttributeValue(), null, undefined, "")) 
+														{
+															violationCitation = ASIModel.getAttributeValue();
+														}
+													}
+												}
+											}
+										}
+									}
+									var fieldInfo = new asiTableValObj("Comply By Date", compByDate, readOnly);
+									violationArray["Comply By Date"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Citation Warning", violationWarning, readOnly);
+									violationArray["Citation Warning"] = fieldInfo;
+									
+									var fieldInfo = new asiTableValObj("Citation", violationCitation, readOnly);
+									violationArray["Citation"] = fieldInfo;
+									
+									if(gsItems[loopi].getGuideItemStatus() == "Complied")
+									{
+										var compliedDate = (startDate.getMonth() + 1) + "/" + startDate.getDate() + "/" + startDate.getFullYear();
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+										violationArray["Complied Date"] = fieldInfo;
+									}
+									else
+									{
+										var compliedDate = "";
+										var fieldInfo = new asiTableValObj("Complied Date", compliedDate, readOnly);
+										violationArray["Complied Date"] = fieldInfo;
+									}
+									
+									var dollarAmt = 0;
+									var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dollarAmt).toFixed(2), readOnly);
+									violationArray["Daily Amount"] = fieldInfo;
+									newViolationArray.push(violationArray);
+								}
+							}
+						}
+						newViolationArray.sort
+						(
+							function(a, b)
+							{
+								return a.ID - b.ID;
+							}
+						)
+					}
+				}
+			}
+		}
+	}
+	for(var n in newViolationArray)
+	{
+		var newV = newViolationArray[n];
+		var exists = idExists(newV["ID"].fieldValue);
+		logDebug("Exists: " + exists);
+		if (exists)
+		{
+			for (var o in oldViolationArray)
+			{
+				var oldV = oldViolationArray[o];
+				var oldID = oldV["ID"].fieldValue;
+				var newID = newV["ID"].fieldValue;
+				if (oldID.equals(newID))
+				{
+					var oldComply = oldV["Comply By Date"].fieldValue;
+					var newComply = newV["Comply By Date"].fieldValue;
+					if (!oldComply.equals(newComply))
+					{
+						oldV["Comply By Date"] = newV["Comply By Date"];
+					}
+					var oldComplied = oldV["Complied Date"].fieldValue;
+					var newComplied = newV["Complied Date"].fieldValue;
+					if (!matches(newComplied, "", undefined, null))
+					{
+						if(!matches(oldComplied, "", undefined, null))
+						{
+							if(!oldComplied.equals(newComplied))
+							{
+								oldV["Complied Date"] = newV["Complied Date"];
+							}
+						}
+						else
+						{
+							oldV["Complied Date"] = newV["Complied Date"];
+						}
+					}
+					var oldDay = oldV["Daily Amount"].fieldValue;
+					var newDay = newV["Daily Amount"].fieldValue;
+					if (!matches(newDay, "", undefined, null, 0.00, 0))
+					{
+						if(!matches(oldDay, "", undefined, null, 0.00, 0))
+						{
+							if(!oldDay.equals(newDay))
+							{
+								oldV["Daily Amount"] = newV["Daily Amount"];
+							}
+						}
+						else
+						{
+							oldV["Daily Amount"] = newV["Daily Amount"];
+						}
+					}
+					break;
+				}
+			}
+		}
+		else
+		{
+			vArray = new Array();
+			var nid = newV["ID"].fieldValue;
+			var fieldInfo = new asiTableValObj("ID", nid, readOnly);
+			vArray["ID"] = fieldInfo;
+			
+			var nvcode = newV["Violation Code"].fieldValue;
+			var fieldInfo = new asiTableValObj("Violation Code", nvcode, readOnly);
+			vArray["Violation Code"] = fieldInfo;
+			
+			var nvtype = newV["Violation Type"].fieldValue;
+			var fieldInfo = new asiTableValObj("Violation Type", nvtype, readOnly);
+			vArray["Violation Type"] = fieldInfo;
+			
+			var nvdate = newV["Violation Date"].fieldValue;
+			var fieldInfo = new asiTableValObj("Violation Date", nvdate, readOnly);
+			vArray["Violation Date"] = fieldInfo;
+			
+			var ncdate = newV["Comply By Date"].fieldValue;
+			var fieldInfo = new asiTableValObj("Comply By Date", ncdate, readOnly);
+			vArray["Comply By Date"] = fieldInfo;
+			
+			var cDate = newV["Complied Date"].fieldValue;
+			if(matches(cDate, "", undefined, null))
+			{
+				cDate = "";
+			}
+			var fieldInfo = new asiTableValObj("Complied Date", cDate, readOnly);
+			vArray["Complied Date"] = fieldInfo;
+			
+			var nord = newV["Ordinance"].fieldValue;
+			var fieldInfo = new asiTableValObj("Ordinance", nord, readOnly);
+			vArray["Ordinance"] = fieldInfo;
+			
+			var ntowit = newV["ToWit"].fieldValue;
+			var fieldInfo = new asiTableValObj("ToWit", ntowit, readOnly);
+			vArray["ToWit"] = fieldInfo;
+			
+			var ncoract = newV["Corrective Action"].fieldValue;
+			var fieldInfo = new asiTableValObj("Corrective Action", ncoract, readOnly);
+			vArray["Corrective Action"] = fieldInfo;
+			
+			var warn = newV["Citation Warning"].fieldValue;
+			if(matches(warn, "", undefined, null))
+			{
+				warn = "";
+			}
+			var fieldInfo = new asiTableValObj("Citation Warning", warn, readOnly);
+			vArray["Citation Warning"] = fieldInfo;
+			
+			var cit = newV["Citation"].fieldValue;
+			if(matches(cit, "", undefined, null))
+			{
+				cit = "";
+			}
+			var fieldInfo = new asiTableValObj("Citation", cit, readOnly);
+			vArray["Citation"] = fieldInfo;
+			
+			var dAmt = newV["Daily Amount"].fieldValue;
+			if(matches(dAmt, "", undefined, null, 0.00, 0))
+			{
+				dAmt = 0;
+			}
+			var fieldInfo = new asiTableValObj("Daily Amount", parseFloat(dAmt).toFixed(2), readOnly);
+			vArray["Daily Amount"] = fieldInfo;
+			oldViolationArray.push(vArray);
+		}
+	}
+	removeASITable("VIOLATIONS");
+	addASITable("VIOLATIONS", oldViolationArray, capId);
+	function idExists(id)
+	{
+		var ex = false;
+		for(var e in existingIdArray)
+		{
+			if(existingIdArray[e] == id)
+			{
+				ex = true;
+			}
+		}
+		if(ex)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+}
+function workflowAcceptedParks()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PR-APPLICATION ACCEPTED", emailParams, reportFile);
+	}
+}
+function workflowAcceptedPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-APPLICATION ACCEPTED", emailParams, reportFile);
+	}
+}
+function workflowAcceptedPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-APPLICATION ACCEPTED", emailParams, reportFile);
+	}
+}
+function workflowAcceptedTAM()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "TAM-APPLICATION ACCEPTED", emailParams, reportFile);
+	}
+}
+function workflowAgendaPrepPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-AGENDA PREP", emailParams, reportFile);
+	}
+}
+function workflowApprovedPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-PLAN REVIEW APPROVED", emailParams, reportFile);
+	}
+}
+function workflowAwaitingClientAlarms()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "ALM-AWAITING CLIENT REPLY", emailParams, reportFile);
+	}
+}
+function workflowAwaitingClientBT()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BT-AWAITING CLIENT REPLY", emailParams, reportFile);
+	}
+}
+function workflowAwaitingClientParks()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PR-AWAITING CLIENT REPLY", emailParams, reportFile);
+	}
+}
+function workflowAwaitingClientPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-AWAITING CLIENT REPLY", emailParams, reportFile);
+	}
+}
+function workflowAwaitingClientPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-AWAITING CLIENT REPLY", emailParams, reportFile);
+	}
+}
+function workflowAwaitingClientTAM()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "TAM-AWAITING CLIENT REPLY", emailParams, reportFile);
+	}
+}
+function workflowCertificationPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-CERTIFICATE ISSUED", emailParams, reportFile);
+	}
+}
+function workflowCommissionParks()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PR-COMMISSION ACCEPTED", emailParams, reportFile);
+	}
+}
+function workflowCorrectionsPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-CORRECTIONS REQUIRED", emailParams, reportFile);
+	}
+}
+function workflowDeniedPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-DENIED", emailParams, reportFile);
+	}
+}
+function workflowDisapprovedPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-DISAPPROVED", emailParams, reportFile);
+	}
+}
+function workflowFinalDRCPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-FINAL DRC COMPLETE", emailParams, reportFile);
+	}
+}
+function workflowIssuanceBT()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BT-RECEIPT ISSUANCE", emailParams, reportFile);
+	}
+}
+function workflowIssuanceParks()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PR-PERMIT ISSUANCE", emailParams, reportFile);
+	}
+}
+function workflowIssuancePermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-PERMIT ISSUANCE", emailParams, reportFile);
+	}
+}
+//Building Alarm Label Request email
+function workflowLabelIssuancePermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-LABEL ISSUANE", emailParams, reportFile);
+	}
+}
+function workflowOutdoorDiningIssued()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "bpatterson@fortlauderdale.gov";
+
+	//for (con in conArray)
+	//{
+	//	if (!matches(conArray[con].email, null, undefined, ""))
+	//	{
+	//		conEmail += conArray[con].email + "; ";
+	//	}
+	//}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-OUTDOOR DINING ISSUED", emailParams, reportFile);
+	}
+	
+}
+function workflowPublicSignsPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-PUBLIC SIGNS READY", emailParams, reportFile);
+	}
+}
+function workflowReviewTaskComments()
+{
+	var reviewComments = "";
+	var workflowResult = aa.workflow.getTasks(capId);
+	if (workflowResult.getSuccess())
+	{
+		var wfObj = workflowResult.getOutput();
+	}
+	else
+	{ 
+		logDebug("**ERROR: Failed to get workflow object"); 
+		return false; 
+	}
+	for (i in wfObj)
+	{
+		fTask = wfObj[i];
+		if (fTask.getTaskDescription().contains("Review") && fTask.getCompleteFlag() == "Y")
+		{
+			reviewComments += "<b>" + fTask.getTaskDescription() + "</b><br>" + fTask.getDispositionComment() + "<br><br>";
+		}
+	}
+	return reviewComments;
+}
+function workflowSideWalkCafeIssued()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "bpatterson@fortlauderdale.gov";
+
+	//for (con in conArray)
+	//{
+	//	if (!matches(conArray[con].email, null, undefined, ""))
+	//	{
+	//		conEmail += conArray[con].email + "; ";
+	//	}
+	//}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-SIDEWALK CAFE ISSUED", emailParams, reportFile);
+	}
+	
+}
+function workflowVoidPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-VOID", emailParams, reportFile);
+	}
+}
+function workflowWithdrawnParks()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PR-WITHDRAWN", emailParams, reportFile);
+	}
+}
+function workflowWithdrawnPermits()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-WITHDRAWN", emailParams, reportFile);
+	}
+}
+function workflowWithdrawnPLN()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "PLN-WITHDRAWN", emailParams, reportFile);
+	}
+}
+function workflowWithdrawnTAM()
+{
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashtable();
+	var reportFile = new Array();
+	var conArray = getContactArray();
+	var conEmail = "";
+
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	getPrimaryAddressLineParam4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "TAM-WITHDRAWN", emailParams, reportFile);
+	}
+}
