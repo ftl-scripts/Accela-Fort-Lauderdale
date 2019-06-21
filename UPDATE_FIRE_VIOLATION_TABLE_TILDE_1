@@ -157,7 +157,7 @@ function updateFireViolationTable(inspectionId)
 									var violationCorrective = "";
 									var violationToWit = "";
 									var guideComment = gsItems[loopi].getGuideItemComment();
-									if(guideComment.indexOf("~") > 0)
+									if(guideComment.indexOf("~") > 1)
 									{
 										commentArray = guideComment.split("~");
 										var arrLength = commentArray.length;
