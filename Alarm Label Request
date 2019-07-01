@@ -1,0 +1,65 @@
+if (wfTask == "Label Issuance" && wfStatus == "Issued")
+{
+	var numLabels = getAppSpecific("Number of Alarm Labels Requested");
+	for(var i = 0; i < parseInt(numLabels); i++)
+	{
+		var result = aa.cap.createApp(appTypeArray[0], "Alarm Label", "NA", "NA", "Alarm Label");
+		if (result.getSuccess())
+		{
+			parResult = result.getOutput();
+			var childId = aa.cap.getCapID(parResult.getID1(), parResult.getID2(), parResult.getID3()).getOutput();
+			var linkResult = aa.cap.createAppHierarchy(capId, childId);
+			if (linkResult.getSuccess())
+			{
+				logDebug("Successfully linked to Application : " + capIDString);
+			}
+			else
+			{
+				logDebug( "**ERROR: linking to application to (" + capIDString + "): " + linkResult.getErrorMessage());
+			}
+			copyLicensedProf(capId, childId);
+		}
+	}
+	var reportName = "Alarm Label";
+	var emailParams = aa.util.newHashtable();
+	var reportParams = aa.util.newHashMap();
+	reportParams.put("Record_ID", capIDString);
+	var envParams = aa.util.newHashMap();
+	envParams.put("reportTemplate", reportName);
+	envParams.put("vRParams", reportParams);
+	envParams.put("CapId", capId);
+	aa.runAsyncScript("runReportAsync", envParams);
+	
+	var conArray = getContactArray();
+	var conEmail = "";
+	for (con in conArray)
+	{
+		if (!matches(conArray[con].email, null, undefined, ""))
+		{
+			conEmail += conArray[con].email + "; ";
+		}
+	}
+	var lpResult = aa.licenseScript.getLicenseProf(capId);
+	if (lpResult.getSuccess())
+	{ 
+		var lpArr = lpResult.getOutput();  
+	} 
+	else 
+	{ 
+		logDebug("**ERROR: getting lic profs from Cap: " + lpResult.getErrorMessage()); 
+	}
+	for (var lp in lpArr)
+	{
+		if (!matches(lpArr[lp].getEmail(), null, undefined, ""))
+		{
+			conEmail += lpArr[lp].getEmail() + "; ";
+		}
+	}
+	getRecordParams4Notification(emailParams);
+	getWorkflowParams4Notification(emailParams);
+	addParameter(emailParams, "$$applicationName$$", cap.getCapModel().getAppTypeAlias());
+	if (conEmail != null)
+	{
+		sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BLD-LABEL ISSUANE", emailParams, null);
+	}
+}
