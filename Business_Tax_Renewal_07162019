@@ -1,0 +1,1677 @@
+/*------------------------------------------------------------------------------------------------------/
+| Program: BusienssTaxRenewal.js  Trigger: Batch 
+| Client: Fort Lauderdale, FL
+| Version 1.0 Jeff Moyer 2/5/2018
+| This batch script will run on 10/31 and 12/31 every year.
+/------------------------------------------------------------------------------------------------------*/
+/*------------------------------------------------------------------------------------------------------/
+|
+| START: USER CONFIGURABLE PARAMETERS
+|
+/------------------------------------------------------------------------------------------------------*/
+var emailText = "";
+var showDebug = true;// Set to true to see debug messages in email confirmation
+var maxSeconds = 60 * 120;// number of seconds allowed for batch processing, usually < 5*60
+var showMessage = false;
+var useAppSpecificGroupName = true;
+var br = "<BR>";
+var currentUserID = "ADMIN";
+sysDate = aa.date.getCurrentDate();
+batchJobResult = aa.batchJob.getJobID();
+batchJobName = "" + aa.env.getValue("BatchJobName");
+wfObjArray = null;
+batchJobID = 0;
+if (batchJobResult.getSuccess()) 
+{
+	batchJobID = batchJobResult.getOutput();
+	logDebug("Batch Job " + batchJobName + " Job ID is " + batchJobID + br);
+}
+else
+{
+	logDebug("Batch job ID not found " + batchJobResult.getErrorMessage());
+}
+/*----------------------------------------------------------------------------------------------------/
+|
+| Start: BATCH PARAMETERS
+|
+/------------------------------------------------------------------------------------------------------*/
+var startDate = new Date();
+var timeDate = new Date();
+var startTime = timeDate.getTime();// Start timer
+var systemUserObj = aa.person.getUser("ADMIN").getOutput();
+var timeExpired = false;
+var emailAddress = aa.env.getValue("Report Email");
+var sendPostal = aa.env.getValue("Send Postal to All");	
+var fromDate; 
+var toDate;
+var statusCheck;
+var statusSet;
+var workAppStatus = "";
+var childCapId;
+var capId;
+var altId;
+var cap;
+var appTypeResult;
+var appTypeString;
+var appTypeArray;
+var totFeeAmt = 0;
+var reportParams = aa.util.newHashtable();
+var reportName = "";
+var reportFile = new Array();
+var recCount = 0;
+var genCount = 0;
+/*----------------------------------------------------------------------------------------------------/
+|
+| End: BATCH PARAMETERS
+|
+/------------------------------------------------------------------------------------------------------*/
+/*------------------------------------------------------------------------------------------------------/
+| <===========Main=Loop================>
+|
+/-----------------------------------------------------------------------------------------------------*/
+var paramsOK = true;
+if(matches(emailAddress, null, "", undefined))
+{
+	emailAddress = "adiaz@accela.com";
+}
+if(matches(sendPostal, null, "", undefined))
+{
+	sendPostal = "Y";
+}
+if(matches(sendPostal, null, "", undefined) || matches(emailAddress, null, "", undefined))
+{
+	paramsOK = false;
+}
+if (paramsOK) 
+{
+	logDebug("Start Date: " + startDate + br);
+	logDebug("Starting the timer for this job.  If it takes longer than 5 minutes an error will be listed at the bottom of the email." + br);
+	if (!timeExpired) 
+	{
+		mainProcess();
+		logDebug("End of Job: Elapsed Time : " + elapsed() + " Seconds");
+		logDebug("End Date: " + startDate);
+		logDebug("recCount " + recCount);
+		logDebug("genCount " + genCount);
+		aa.sendMail("noreply@fortlauderdale.gov", emailAddress, "", "Batch Job - Business Tax General Renewal", emailText);
+	}
+}
+/*------------------------------------------------------------------------------------------------------/
+| <===========END=Main=Loop================>
+/-----------------------------------------------------------------------------------------------------*/
+/*------------------------------------------------------------------------------------------------------/
+| <===========External Functions (used by Action entries)
+/------------------------------------------------------------------------------------------------------*/
+function mainProcess() 
+{
+	logDebug("Run Date: " + startDate);
+	var ateDate = new Date("09/30/" + startDate.getFullYear());
+	fromDate = (ateDate.getMonth() + 1) + "/" + ateDate.getDate() + "/" + ateDate.getFullYear(); 
+	toDate = (ateDate.getMonth() + 1) + "/" + ateDate.getDate() + "/" + ateDate.getFullYear();
+	statusCheck = "Active";
+	statusSet = "Pending";
+	workAppStatus = "About to Expire";
+	processLicenses();
+}
+
+function processLicenses() 
+{
+	logDebug("Set currently " + statusCheck + " licenses to " + statusSet + " for date range -- From Date: " + fromDate + ", To Date: " + toDate + "." + br);
+	var expResult = aa.expiration.getLicensesByDate(statusCheck, fromDate, toDate);
+	if (expResult.getSuccess()) 
+	{
+		myExp = expResult.getOutput();
+		logDebug("Processing " + myExp.length + " expiration records." + br);
+	}
+	else 
+	{ 
+		logDebug("ERROR: Getting Expirations, reason is: " + expResult.getErrorType() + ":" + expResult.getErrorMessage()); 
+		return false;
+	}	
+	for (thisExp in myExp) 
+	{
+		if (elapsed() > maxSeconds) 
+		{
+			logDebug("A script timeout has caused partial completion of this process.  Please re-run.  " + elapsed() + " seconds elapsed, " + maxSeconds + " allowed.");
+			timeExpired = true;
+			break;
+		}
+		recCount++;
+		b1Exp = myExp[thisExp];
+		var expDate = b1Exp.getExpDate();
+		if (expDate) 
+		{
+			var b1ExpDate = expDate.getMonth() + "/" + expDate.getDayOfMonth() + "/" + expDate.getYear();
+			var b1Status = b1Exp.getExpStatus();
+			capId = aa.cap.getCapID(b1Exp.getCapID().getID1(),b1Exp.getCapID().getID2(),b1Exp.getCapID().getID3()).getOutput();
+			altId = capId.getCustomID();
+			cap = aa.cap.getCap(capId).getOutput();	
+			if (cap) 
+			{
+				appTypeResult = cap.getCapType();
+				appTypeString = appTypeResult.toString();
+				logDebug("<b>" + altId + "</b>  " + appTypeString);
+				appTypeArray = appTypeString.split("/");
+				if(appTypeArray[0] == "BusinessTax" && appTypeArray[1] == "Apartment-Hotel-Motel" && appTypeArray[2] == "Receipt" && appTypeArray[3] == "NA") 
+				{
+					genCount++;
+					logDebug("<b>" + altId + "</b>");
+					logDebug("Business Tax: " + appTypeArray[1]);
+					logDebug("Expires on: " + b1ExpDate);
+					b1Exp.setExpStatus(statusSet);
+					aa.expiration.editB1Expiration(b1Exp.getB1Expiration());
+					logDebug("Renewal Status set to " + statusSet);
+					updateAppStatus(workAppStatus, "Set to " + workAppStatus + " by batch process.");
+					logDebug("Application Status set to " + statusSet);
+					updateTask("Receipt", workAppStatus, "Updated by renewal batch", "Updated by renewal batch", "BT_RECPT", capId);
+					if (statusSet == "Pending")
+					{
+						var result = aa.cap.createApp(appTypeArray[0], appTypeArray[1], "Renewal", "NA", appTypeArray[1] + " Renewal");
+						if (result.getSuccess())
+						{
+							childResult = result.getOutput();
+							childCapId = aa.cap.getCapID(childResult.getID1(), childResult.getID2(), childResult.getID3()).getOutput();
+							var addChild = aa.cap.createRenewalCap(capId, childCapId, false);
+							if (addChild.getSuccess())
+							{
+								copyContacts(capId, childCapId);
+								copyASIFields(capId, childCapId);
+								copyASITables(capId, childCapId);
+								copyAddresses(capId, childCapId);
+								copyOwner(capId, childCapId);
+								copyParcels(capId, childCapId);
+								copyParcelGisObjects();
+								aa.cap.updateAccessByACA(childCapId, "Y");						
+								var projIncomplete = aa.cap.getProjectByChildCapID(childCapId, "Renewal", "Incomplete");
+								if(projIncomplete.getSuccess())
+								{
+									var projInc = projIncomplete.getOutput();
+									for (var pi in projInc)
+									{
+										projInc[pi].setStatus("Review");
+										var updateResult = aa.cap.updateProject(projInc[pi]);
+									}
+								}
+								var projReview = aa.cap.getProjectByChildCapID(childCapId, "Renewal", "Review");
+								if(projReview.getSuccess())
+								{
+									var projRev = projReview.getOutput();
+									for (var pr in projRev)
+									{
+										projRev[pr].setStatus("Complete");
+										var updateResult = aa.cap.updateProject(projRev[pr]);
+									}
+								}
+							}
+						}
+						updateAppStatus("In Process", "Updated by ASA script", childCapId);
+						var exemptCode = "";
+						peeps = aa.people.getCapContactByCapID(childCapId);
+						if(peeps.getSuccess())
+						{
+							peepsOut = peeps.getOutput();
+							for (p in peepsOut)
+							{
+								peep = peepsOut[p].getPeople();
+								cType = peep.getContactType();
+								if(cType == "Business")
+								{
+									var attArray = peep.getAttributes();
+									var attArrayi = attArray.iterator();
+									while(attArrayi.hasNext())
+									{
+										var att = attArrayi.next();
+										var attName = att.getAttributeName();
+										if(attName == "EXEMPT CODE")
+										{
+											exemptCode = att.getAttributeValue();
+										}
+									}
+								}
+							}
+						}
+						logDebug("Exempt Code: " + exemptCode);
+						totFeeAmt = 0;
+						if(matches(exemptCode, null, undefined, ""))
+						{
+							totFeeAmt = businessTaxCategoryPay(childCapId);
+						}
+						logDebug("Total Fee Amount: " + totFeeAmt);
+						if(parseInt(totFeeAmt) <= 0)
+						{
+							updateAppStatus("Issued", "Updated by PRA script");
+							updateTask("Business Tax Review", "Approved", "Updated by PRA script", "Updated by PRA script", "BT_REN", childCapId);
+							updateTask("Issuance", "Issued", "Updated by PRA script", "Updated by PRA script", "BT_REN", childCapId);
+							aa.cap.updateAccessByACA(childCapId, "N");
+							var expDate = "09/30/" + (startDate.getFullYear() + 1);
+							licEditExpInfo("Active", expDate, parentCapId);
+							updateAppStatus("Active", "Set to Active by PRA script.", parentCapId);
+							updateTask("Receipt", "Active", "Set to Active by PRA script.", "Set to Active by PRA script.", "BT_RECPT", parentCapId);
+							var conArray = getContactArray();
+							var conEmail = "";
+							for (con in conArray)
+							{
+								if (conArray[con].contactType == "Business")
+								{
+									conEmail = conArray[con].email;
+									if (conEmail != null)
+									{
+										var emailParams = aa.util.newHashtable();
+										reportParams = aa.util.newHashtable();
+										reportParams.put("Record ID", altId);
+										reportName = "Business Tax Receipt";
+										reportFile = new Array();
+										addParameter(emailParams, "$$altID$$", altId);
+										addParameter(emailParams, "$$capName$$", appTypeArray[1]);
+										addParameter(emailParams, "$$capStatus$$", statusSet);
+										getPrimaryAddressLineParam4Notification(emailParams);
+										reportFile.push(reportRunSave(reportName, false, false, true));
+										sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BT-RECEIPT ISSUANCE", emailParams, reportFile, parentCapId);
+									}
+									else
+									{
+										updateAppStatus("Need Mail", "Updated by ASA script", childCapId);
+										logDebug("<b>" + appTypeArray[1] + " has no email address.</b>");
+									}
+								}
+							}
+							if(sendPostal = "Y")
+							{
+								var setMonth;
+								var setDay;
+								if((startDate.getMonth() + 1) <= 9)
+								{
+									setMonth = "0" + (startDate.getMonth() + 1);
+								}
+								else
+								{
+									setMonth = (startDate.getMonth() + 1);
+								}
+								if(startDate.getDate() <= 9)
+								{
+									setDay = "0" + startDate.getDate();
+								}
+								else
+								{
+									setDay = startDate.getDate();
+								}
+								var setDate = setMonth + "" + setDay + "" + startDate.getFullYear();
+								var setCode = "BTATEAPH" + setDate;
+								var setName = "BT About to Expire Apartment-Hotel-Motel " + setDate;
+								var setComment = "Set Created by batch script BusinessTaxAptHotelMotelAboutToExpire on " + startDate;
+								var setRptType = "BTRENEWAL";
+								var setRptStatus = "Run Report";
+								addRecordToSet(capId, setCode, setName, setComment, setRptType, setRptStatus);
+							}
+							if(sendPostal == "N")
+							{
+								if(matches(conEmail, null, "", undefined))
+								{
+									var setMonth;
+									var setDay;
+									if((startDate.getMonth() + 1) <= 9)
+									{
+										setMonth = "0" + (startDate.getMonth() + 1);
+									}
+									else
+									{
+										setMonth = (startDate.getMonth() + 1);
+									}
+									if(startDate.getDate() <= 9)
+									{
+										setDay = "0" + startDate.getDate();
+									}
+									else
+									{
+										setDay = startDate.getDate();
+									}
+									var setDate = setMonth + "" + setDay + "" + startDate.getFullYear();
+									var setCode = "BTATEAPH" + setDate;
+									var setName = "BT About to Expire Apartment-Hotel-Motel " + setDate;
+									var setComment = "Set Created by batch script BusinessTaxAptHotelMotelAboutToExpire on " + startDate;
+									var setRptType = "BTRENEWAL";
+									var setRptStatus = "Run Report";
+									addRecordToSet(capId, setCode, setName, setComment, setRptType, setRptStatus);
+								}
+							}
+						}
+						else
+						{
+							var conArray = getContactArray();
+							var conEmail = "";
+							for (con in conArray)
+							{
+								if (conArray[con].contactType == "Business")
+								{
+									conEmail = conArray[con].email;
+									if (conEmail != null)
+									{
+										var emailParams = aa.util.newHashtable();
+										reportParams = aa.util.newHashtable();
+										reportParams.put("Record ID", altId);
+										reportName = "Business Tax Receipt";
+										reportFile = new Array();
+										addParameter(emailParams, "$$altID$$", altId);
+										addParameter(emailParams, "$$capName$$", appTypeArray[1]);
+										addParameter(emailParams, "$$capStatus$$", statusSet);
+										getPrimaryAddressLineParam4Notification(emailParams);
+										//sendNotification("noreply@fortlauderdale.gov", "jmoyer@accela.com", "", "BT-RENEWAL", emailParams, reportFile, capId);
+										//sendNotification("noreply@fortlauderdale.gov", conEmail, "", "BT-RENEWAL", emailParams, reportFile, capId);
+									}
+									else
+									{
+										updateAppStatus("Need Mail", "Updated by ASA script", childCapId);
+										logDebug("<b>" + appTypeArray[1] + " has no email address.</b>");
+									}
+								}
+							}
+							if(sendPostal = "Y")
+							{
+								var setMonth;
+								var setDay;
+								if((startDate.getMonth() + 1) <= 9)
+								{
+									setMonth = "0" + (startDate.getMonth() + 1);
+								}
+								else
+								{
+									setMonth = (startDate.getMonth() + 1);
+								}
+								if(startDate.getDate() <= 9)
+								{
+									setDay = "0" + startDate.getDate();
+								}
+								else
+								{
+									setDay = startDate.getDate();
+								}
+								var setDate = setMonth + "" + setDay + "" + startDate.getFullYear();
+								var setCode = "BTATEAPH" + setDate;
+								var setName = "BT About to Expire Apartment-Hotel-Motel " + setDate;
+								var setComment = "Set Created by batch script BusinessTaxAptHotelMotelAboutToExpire on " + startDate;
+								var setRptType = "BTRENEWAL";
+								var setRptStatus = "Run Report";
+								addRecordToSet(capId, setCode, setName, setComment, setRptType, setRptStatus);
+							}
+							if(sendPostal == "N")
+							{
+								if(matches(conEmail, null, "", undefined))
+								{
+									var setMonth;
+									var setDay;
+									if((startDate.getMonth() + 1) <= 9)
+									{
+										setMonth = "0" + (startDate.getMonth() + 1);
+									}
+									else
+									{
+										setMonth = (startDate.getMonth() + 1);
+									}
+									if(startDate.getDate() <= 9)
+									{
+										setDay = "0" + startDate.getDate();
+									}
+									else
+									{
+										setDay = startDate.getDate();
+									}
+									var setDate = setMonth + "" + setDay + "" + startDate.getFullYear();
+									var setCode = "BTATEGEN" + setDate;
+									var setName = "BT About to Expire General " + setDate;
+									var setComment = "Set Created by batch script BusinessTaxGeneralAboutToExpire on " + startDate;
+									var setRptType = "BTRENEWAL";
+									var setRptStatus = "Run Report";
+									addRecordToSet(childCapId, setCode, setName, setComment, setRptType, setRptStatus);
+								}
+							}
+						}
+					}
+				} 
+			}
+		}
+	}
+}
+
+/*------------------------------------------------------------------------------------------------------/
+| <===========Internal Functions and Classes (Used by this script)
+/------------------------------------------------------------------------------------------------------*/
+function addRecordToSet(cId, setCode, setName, setComment, setRptType, setRptStatus)
+{
+	var currentSet = aa.set.getSetByPK(setCode);
+	if (!currentSet.getSuccess())
+	{
+		aa.set.createSet(setCode, setName, "CAP", setComment);
+		var updateSet = aa.set.getSetByPK(setCode).getOutput();
+		updateSet.setRecordSetType(setRptType);
+		updateSet.setSetStatus(setRptStatus);
+		updateRes = aa.set.updateSetHeader(updateSet);
+		aa.set.addCapSetMember(setCode, cId);
+	}
+	else
+	{
+		setMembers = aa.set.getCAPSetMembersByPK(setCode);
+		setMem = setMembers.getOutput();
+		if(setMem.isEmpty())
+		{
+			aa.set.addCapSetMember(setCode, cId);
+		}
+		else
+		{
+			var recExists = false;
+			var setMemi = setMem.iterator();
+			while (setMemi.hasNext())
+			{
+				newId = setMemi.next();
+				if (newId == capId)
+				{
+					recExists = true;
+					break;
+				}
+			}
+			if (!recExists)
+			{
+				aa.set.addCapSetMember(setCode, cId);
+			}
+		}
+	}
+}
+
+function businessTaxCategoryPay(itemCap) 
+{
+	var feeTotal = 0;
+	var gmPay = aa.appSpecificTableScript.getAppSpecificTableGroupModel(itemCap).getOutput();
+	var taPay = gmPay.getTablesArray();
+	var taiPay = taPay.iterator();
+	while (taiPay.hasNext())
+	{
+		var tsmPay = taiPay.next();
+		var tnPay = tsmPay.getTableName();
+		if (tnPay.equals("CATEGORY"))
+		{
+			if (!tsmPay.rowIndex.isEmpty())
+			{
+				logDebug("Table Empty: " + tsmPay.rowIndex.isEmpty());
+				var tsmfldiPay = tsmPay.getTableField().iterator();
+				var tsmcoliPay = tsmPay.getColumns().iterator();
+				var feeCode = "";
+				var endDate = new Date();
+				var eDate = "";
+				var feeSeqArr = new Array();
+				var payPeriodArr = new Array();
+				var vetCount = 0;
+				while (tsmfldiPay.hasNext())
+				{
+					if (!tsmcoliPay.hasNext())
+					{
+						if (matches(eDate, "", undefined, null) || startDate < endDate)
+						{
+							var fSeq = addFee(feeCode, "BT", "FINAL", 1, "N", itemCap);
+							var fItem = aa.fee.getFeeItemByPK(itemCap, fSeq).getOutput();
+							var fAmt = fItem.getFee();
+							feeTotal += fAmt;
+							feeSeqArr.push(aa.util.parseLong(fSeq));
+							payPeriodArr.push("FINAL");
+						}
+						var tsmcoliPay = tsmPay.getColumns().iterator();
+						feeCode = "";
+						endDate = new Date();
+						eDate = "";
+					}
+					var tcolPay = tsmcoliPay.next();
+					var tvalPay = tsmfldiPay.next();
+					if (tcolPay.getColumnName().equals("Category"))
+					{
+						feeCode = tvalPay.substring(0, 6);
+					}
+					if (tcolPay.getColumnName().equals("End Date"))
+					{
+						eDate = tvalPay;
+						if(!matches(eDate, "", undefined, null))
+						{
+							endDate = new Date(tvalPay);
+						}
+					}
+				}
+				if (matches(eDate, "", undefined, null) || startDate < endDate)
+				{
+					var fSeq = addFee(feeCode, "BT", "FINAL", 1, "N", itemCap);
+					var fItem = aa.fee.getFeeItemByPK(itemCap, fSeq).getOutput();
+					var fAmt = fItem.getFee();
+					feeTotal += fAmt;
+					feeSeqArr.push(aa.util.parseLong(fSeq));
+					payPeriodArr.push("FINAL");
+					aa.finance.createInvoice(itemCap, feeSeqArr, payPeriodArr);
+				}
+			}
+		}
+	}
+	return feeTotal;
+}
+
+function reportRunSave(reportName, view, edmsSave, storeToDisk) 
+{
+	var name = "";
+	var rFile = new Array();
+	var error = "";
+	var reportModule = "BusinessTax";
+	var reportModel = aa.reportManager.getReportModelByName(reportName); //get detail of report to drive logic
+	if (reportModel.getSuccess()) 
+	{
+		reportDetail = reportModel.getOutput();
+		name = reportDetail.getReportDescription();
+		if (name == null || name == "") 
+		{
+			name = reportDetail.getReportName();
+		}
+		var reportInfoModel = aa.reportManager.getReportInfoModelByName(reportName);  //get report info to change the way report runs
+		if (reportInfoModel.getSuccess()) { 
+			report = reportInfoModel.getOutput();
+			report.setModule(reportModule); 
+			//report.setCapId(capId);
+			reportInfo = report.getReportInfoModel();
+			report.setReportParameters(reportParams);
+			//process parameter selection and EDMS save
+			if (edmsSave == true && view == true ) 
+			{
+				reportRun = aa.reportManager.runReport(reportParams, reportDetail);
+				showMessage = true;
+				comment(reportRun.getOutput()); //attaches report
+				if (storeToDisk == true) 
+				{
+					reportInfo.setNotSaveToEDMS(false);
+					reportResult = aa.reportManager.getReportResult(report); //attaches report
+					if (reportResult.getSuccess()) 
+					{
+						reportOut = reportResult.getOutput();
+						reportOut.setName(changeNameofAttachment(reportOut.getName()));
+						rFile = aa.reportManager.storeReportToDisk(reportOut);
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug reportFile for error message.";
+							logDebug(error);
+						}
+					} 
+					else 
+					{
+						rFile = new Array();
+						error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+						logDebug(error);
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+				}
+			} 
+			else if (edmsSave == true && view == false) 
+			{
+				reportInfo.setNotSaveToEDMS(false);
+				reportResult = aa.reportManager.getReportResult(report); //attaches report
+				if (reportResult.getSuccess()) 
+				{
+					reportOut = reportResult.getOutput();
+					reportOut.setName(changeNameofAttachment(reportOut.getName()));
+					if (storeToDisk == true) 
+					{
+						rFile = aa.reportManager.storeReportToDisk(reportOut);
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug rFile for error message.";
+							logDebug(error);
+						}
+					} 
+					else 
+					{
+						rFile = new Array();
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+					error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+					logDebug(error);
+				}
+			} 
+			else if (edmsSave == false && view == true) 
+			{
+				reportRun = aa.reportManager.runReport(reportParams, reportDetail);
+				showMessage = true;
+				comment(reportRun.getOutput());
+				if (storeToDisk == true) 
+				{
+					reportInfo.setNotSaveToEDMS(true);
+					reportResult = aa.reportManager.getReportResult(report);
+					if (reportResult.getSuccess()) 
+					{
+						reportResult = reportResult.getOutput();
+						reportResult.setName(changeNameofAttachment(reportResult.getName()));
+						rFile = aa.reportManager.storeReportToDisk(reportResult);
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug rFile for error message.";
+							logDebug(error);
+						}
+					} 
+					else 
+					{
+						rFile = new Array();
+						error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+						logDebug(error);
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+				}
+			} 
+			else if (edmsSave == false && view == false) 
+			{
+				if (storeToDisk == true) 
+				{
+					reportInfo.setNotSaveToEDMS(true);
+					reportResult = aa.reportManager.getReportResult(report);
+					if (reportResult.getSuccess()) 
+					{
+						reportResult = reportResult.getOutput();
+						reportResult.setName(changeNameofAttachment(reportResult.getName()));
+						rFile = aa.reportManager.storeReportToDisk(reportResult);
+						logDebug("Report File: " + rFile.getSuccess());
+						if (rFile.getSuccess()) 
+						{
+							rFile = rFile.getOutput();
+							logDebug("Actual Report: " + rFile);
+						} 
+						else 
+						{
+							rFile = new Array();
+							error = "Report failed to store to disk.  Debug rFile for error message.";
+							logDebug(error);
+						}
+					}
+					else 
+					{
+						rFile = new Array();
+						error = "Report failed to run and store to disk.  Debug reportResult for error message.";
+						logDebug(error);
+					}
+				} 
+				else 
+				{
+					rFile = new Array();
+				}
+			}
+		} 
+		else 
+		{
+			rFile = new Array();
+			error = "Failed to get report information.  Check report name matches name in Report Manager.";
+			logDebug(error);
+		}
+	} 
+	else 
+	{
+		rFile = new Array();
+		error = "Failed to get report detail.  Check report name matches name in Report Manager.";
+		logDebug(error);
+	}
+	function changeNameofAttachment(attachmentName) 
+	{
+		rptExtLoc = attachmentName.indexOf(".");
+		rptLen = attachmentName.length();
+		ext = attachmentName.substr(rptExtLoc, rptLen);
+		attachName = name + ext;
+		return attachName
+	}	
+	return rFile;
+}
+
+function getIncompleteCapId()  
+{
+    var s_id1 = aa.env.getValue("PermitId1");
+    var s_id2 = aa.env.getValue("PermitId2");
+    var s_id3 = aa.env.getValue("PermitId3");
+
+    var result = aa.cap.getCapIDModel(s_id1, s_id2, s_id3);
+    if(result.getSuccess())
+	{
+      return result.getOutput();
+	}  
+    else 
+    {
+      logDebug("ERROR: Failed to get capId: " + result.getErrorMessage());
+      return null;
+    }
+}
+
+function licEditExpInfo(pExpStatus, pExpDate, cCapId)
+{
+	//Edits expiration status and/or date
+	//Needs licenseObject function
+	//06SSP-00238
+	var lic = new licenseObject(null, cCapId);
+	if (pExpStatus != null)
+	{
+		lic.setStatus(pExpStatus);
+	}	
+	if (pExpDate != null)
+	{
+		lic.setExpiration(pExpDate);
+	}
+}
+
+function licenseObject(licnumber)  //optional renewal Cap ID -- uses the expiration on the renewal CAP.
+{
+	itemCap = capId;
+	if (arguments.length == 2) itemCap = arguments[1]; // use cap ID specified in args
+	this.refProf = null;		// licenseScriptModel (reference licensed professional)
+	this.b1Exp = null;		// b1Expiration record (renewal status on application)
+	this.b1ExpDate = null;
+	this.b1ExpCode = null;
+	this.b1Status = null;
+	this.refExpDate = null;
+	this.licNum = licnumber;	// License Number
+	// Load the reference License Professional if we're linking the two
+	if (licnumber) // we're linking
+	{
+		var newLic = getRefLicenseProf(licnumber)
+		if (newLic)
+		{
+			this.refProf = newLic;
+			tmpDate = newLic.getLicenseExpirationDate();
+			if (tmpDate)
+			{
+				this.refExpDate = tmpDate.getMonth() + "/" + tmpDate.getDayOfMonth() + "/" + tmpDate.getYear();
+				logDebug("Loaded reference license professional with Expiration of " + this.refExpDate);
+			}
+		}
+	}
+   	// Load the renewal info (B1 Expiration)
+   	b1ExpResult = aa.expiration.getLicensesByCapID(itemCap)
+	if (b1ExpResult.getSuccess())
+	{
+		this.b1Exp = b1ExpResult.getOutput();
+		tmpDate = this.b1Exp.getExpDate();
+		if (tmpDate)
+		{
+			this.b1ExpDate = tmpDate.getMonth() + "/" + tmpDate.getDayOfMonth() + "/" + tmpDate.getYear();
+			this.b1Status = this.b1Exp.getExpStatus();
+			logDebug("Found renewal record of status : " + this.b1Status + ", Expires on " + this.b1ExpDate);
+		}
+	}
+	else
+	{ 
+		logDebug("**ERROR: Getting B1Expiration Object for Cap.  Reason is: " + b1ExpResult.getErrorType() + ":" + b1ExpResult.getErrorMessage());
+		return false;
+	}
+   	this.setExpiration = function(expDate) // Update expiration date
+   	{
+   		var expAADate = aa.date.parseDate(expDate);
+   		if (this.refProf) 
+		{
+   			this.refProf.setLicenseExpirationDate(expAADate);
+   			aa.licenseScript.editRefLicenseProf(this.refProf);
+   			logDebug("Updated reference license expiration to " + expDate); 
+		}
+   		if (this.b1Exp)  
+		{
+ 			this.b1Exp.setExpDate(expAADate);
+			aa.expiration.editB1Expiration(this.b1Exp.getB1Expiration());
+			logDebug("Updated renewal to " + expDate); 
+		}
+   	}
+	this.setIssued = function(expDate) // Update Issued date
+	{
+		var expAADate = aa.date.parseDate(expDate);
+		if (this.refProf) 
+		{
+			this.refProf.setLicenseIssueDate(expAADate);
+			aa.licenseScript.editRefLicenseProf(this.refProf);
+			logDebug("Updated reference license issued to " + expDate); 
+		}
+	}
+	this.setLastRenewal = function(expDate) // Update expiration date
+	{
+		var expAADate = aa.date.parseDate(expDate)
+		if (this.refProf) 
+		{
+			this.refProf.setLicenseLastRenewalDate(expAADate);
+			aa.licenseScript.editRefLicenseProf(this.refProf);
+			logDebug("Updated reference license issued to " + expDate); 
+		}
+	}
+	this.setStatus = function(licStat) // Update expiration status
+	{
+		if (this.b1Exp)
+		{
+			this.b1Exp.setExpStatus(licStat);
+			aa.expiration.editB1Expiration(this.b1Exp.getB1Expiration());
+			logDebug("Updated renewal to status " + licStat); 
+		}
+	}
+	this.getStatus = function()	// Get Expiration Status
+	{
+		if (this.b1Exp) 
+		{
+			return this.b1Exp.getExpStatus();
+		}
+	}
+	this.getCode = function() // Get Expiration Status
+	{
+		if (this.b1Exp) 
+		{
+			return this.b1Exp.getExpCode();
+		}
+	}
+}
+
+function copyOwner(sCapID, tCapID)
+{
+	var ownrReq = aa.owner.getOwnerByCapId(sCapID);
+	if(ownrReq.getSuccess())
+	{
+		var ownrObj = ownrReq.getOutput();
+		for (xx in ownrObj)
+		{
+			ownrObj[xx].setCapID(tCapID);
+			aa.owner.createCapOwnerWithAPOAttribute(ownrObj[xx]);
+			//logDebug("Copied Owner: " + ownrObj[xx].getOwnerFullName())
+		}
+	}
+	//else
+		//logDebug("Error Copying Owner : " + ownrObj.getErrorType() + " : " + ownrObj.getErrorMessage());
+}
+
+function copyParcelGisObjects() 
+{
+	var capParcelResult = aa.parcel.getParcelandAttribute(capId,null);
+	if (capParcelResult.getSuccess())
+	{
+		var Parcels = capParcelResult.getOutput().toArray();
+		for (zz in Parcels)
+		{
+			var ParcelValidatedNumber = Parcels[zz].getParcelNumber();
+			//logDebug("Looking at parcel " + ParcelValidatedNumber);
+			var gisObjResult = aa.gis.getParcelGISObjects(ParcelValidatedNumber); // get gis objects on the parcel number
+			if (gisObjResult.getSuccess()) 	
+				var fGisObj = gisObjResult.getOutput();
+			else
+			{ 
+				//logDebug("**WARNING: Getting GIS objects for Parcel.  Reason is: " + gisObjResult.getErrorType() + ":" + gisObjResult.getErrorMessage()); 
+				return false;
+			}
+			for (a1 in fGisObj) // for each GIS object on the Cap
+			{
+				var gisTypeScriptModel = fGisObj[a1];
+				var gisObjArray = gisTypeScriptModel.getGISObjects()
+				for (b1 in gisObjArray)
+				{
+  					var gisObjScriptModel = gisObjArray[b1];
+  					var gisObjModel = gisObjScriptModel.getGisObjectModel() ;
+
+					var retval = aa.gis.addCapGISObject(capId,gisObjModel.getServiceID(),gisObjModel.getLayerId(),gisObjModel.getGisId());
+					//if (retval.getSuccess())
+					//	{ logDebug("Successfully added Cap GIS object: " + gisObjModel.getGisId())}
+					//else
+					//	{ logDebug("**WARNING: Could not add Cap GIS Object.  Reason is: " + retval.getErrorType() + ":" + retval.getErrorMessage()) ; return false }	
+				}
+			}
+		}
+	}	
+	else
+	{ logDebug("**ERROR: Getting Parcels from Cap.  Reason is: " + capParcelResult.getErrorType() + ":" + capParcelResult.getErrorMessage()) ; return false }
+}
+
+function copyParcels(pFromCapId, pToCapId)
+{
+	if (pToCapId==null)
+		var vToCapId = capId;
+	else
+		var vToCapId = pToCapId;
+				
+	var capParcelResult = aa.parcel.getParcelandAttribute(pFromCapId,null);
+	var copied = 0;
+	if (capParcelResult.getSuccess())
+	{
+		var Parcels = capParcelResult.getOutput().toArray();
+		for (zz in Parcels)
+		{
+			var newCapParcel = aa.parcel.getCapParcelModel().getOutput();
+			newCapParcel.setParcelModel(Parcels[zz]);
+			newCapParcel.setCapIDModel(vToCapId);
+			newCapParcel.setL1ParcelNo(Parcels[zz].getParcelNumber());
+			newCapParcel.setParcelNo(Parcels[zz].getParcelNumber());
+			aa.parcel.createCapParcel(newCapParcel);
+			//logDebug("Copied parcel "+Parcels[zz].getParcelNumber()+" from "+pFromCapId.getCustomID()+" to "+vToCapId.getCustomID());
+			copied++;
+		}
+	}
+	//else
+	//{
+	//	logMessage("**ERROR: Failed to get parcels: " + capParcelResult.getErrorMessage()); 
+	//	return false; 
+	//}
+	return copied;
+} 
+
+function copyContacts(pFromCapId, pToCapId) 
+{
+	if (pToCapId == null)
+	{
+		var vToCapId = capId;
+	}
+	else
+	{
+		var vToCapId = pToCapId;
+	}
+	var capContactResult = aa.people.getCapContactByCapID(pFromCapId);
+	var copied = 0;
+	if (capContactResult.getSuccess()) 
+	{
+		var Contacts = capContactResult.getOutput();
+		for (yy in Contacts) 
+		{
+			var newContact = Contacts[yy].getCapContactModel();
+			// Retrieve contact address list and set to related contact
+			var contactAddressrs = aa.address.getContactAddressListByCapContact(newContact);
+			if (contactAddressrs.getSuccess()) 
+			{
+				var contactAddressModelArr = convertContactAddressModelArr(contactAddressrs.getOutput());
+				newContact.getPeople().setContactAddressList(contactAddressModelArr);
+			}
+			newContact.setCapID(vToCapId);
+			// Create cap contact, contact address and contact template
+			aa.people.createCapContactWithAttribute(newContact);
+			copied++;
+			//logDebug("Copied contact from " + pFromCapId.getCustomID() + " to " + vToCapId.getCustomID());
+		}
+	}
+	else 
+	{
+		logDebug("**ERROR: Failed to get contacts: " + capContactResult.getErrorMessage());
+		return false;
+	}
+	return copied;
+}
+
+function convertContactAddressModelArr(contactAddressScriptModelArr) 
+{
+	var contactAddressModelArr = null;
+	if (contactAddressScriptModelArr != null && contactAddressScriptModelArr.length > 0) 
+	{
+		contactAddressModelArr = aa.util.newArrayList();
+		for (loopk in contactAddressScriptModelArr) 
+		{
+			contactAddressModelArr.add(contactAddressScriptModelArr[loopk].getContactAddressModel());
+		}
+	}
+	return contactAddressModelArr;
+}
+
+function copyASIFields(sourceCapId,targetCapId)
+{
+	var ignoreArray = new Array();
+	for (var i = 2; i < arguments.length; i++)
+	{
+		ignoreArray.push(arguments[i]);
+	}
+	var targetCap = aa.cap.getCap(targetCapId).getOutput();
+	var targetCapType = targetCap.getCapType();
+	var targetCapTypeString = targetCapType.toString();
+	var targetCapTypeArray = targetCapTypeString.split("/");
+	var sourceASIResult = aa.appSpecificInfo.getByCapID(sourceCapId);
+	if (sourceASIResult.getSuccess())
+	{ 
+		var sourceASI = sourceASIResult.getOutput(); 
+	}
+	else
+	{ 
+		//aa.print( "**ERROR: getting source ASI: " + sourceASIResult.getErrorMessage());
+		return false;
+	}
+	for (ASICount in sourceASI)
+	{
+		thisASI = sourceASI[ASICount];
+		if (!exists(thisASI.getCheckboxType(),ignoreArray))
+		{
+			thisASI.setPermitID1(targetCapId.getID1());
+			thisASI.setPermitID2(targetCapId.getID2());
+			thisASI.setPermitID3(targetCapId.getID3());
+			thisASI.setPerType(targetCapTypeArray[1]);
+			thisASI.setPerSubType(targetCapTypeArray[2]);
+			aa.cap.createCheckbox(thisASI);
+		}
+	}
+}
+
+function copyASITables(pFromCapId, pToCapId) 
+{
+	var itemCap = pFromCapId;
+	var gm = aa.appSpecificTableScript.getAppSpecificTableGroupModel(itemCap).getOutput();
+	var ta = gm.getTablesArray();
+	var tai = ta.iterator();
+	var tableArr = new Array();
+	var ignoreArr = new Array();
+	var limitCopy = false;
+	if (arguments.length > 2) 
+	{
+		ignoreArr = arguments[2];
+		limitCopy = true;
+	}
+	while (tai.hasNext()) 
+	{
+		var tsm = tai.next();
+		var tempObject = new Array();
+		var tempArray = new Array();
+		var tn = tsm.getTableName() + "";
+		var numrows = 0;
+		//Check list
+		if (limitCopy) 
+		{
+			var ignore = false;
+			for (var i = 0; i < ignoreArr.length; i++)
+			{
+				if (ignoreArr[i] == tn) 
+				{
+					ignore = true;
+					break;
+				}
+			}
+			if (ignore)
+			{
+				continue;
+			}
+		}
+		if (!tsm.rowIndex.isEmpty()) 
+		{
+			var tsmfldi = tsm.getTableField().iterator();
+			var tsmcoli = tsm.getColumns().iterator();
+			var readOnlyi = tsm.getAppSpecificTableModel().getReadonlyField().iterator(); // get Readonly filed
+			var numrows = 1;
+			while (tsmfldi.hasNext()) // cycle through fields
+			{
+				if (!tsmcoli.hasNext()) // cycle through columns
+				{
+					var tsmcoli = tsm.getColumns().iterator();
+					tempArray.push(tempObject); // end of record
+					var tempObject = new Array(); // clear the temp obj
+					numrows++;
+				}
+				var tcol = tsmcoli.next();
+				var tval = tsmfldi.next();
+				var readOnly = 'N';
+				if (readOnlyi.hasNext()) 
+				{
+					readOnly = readOnlyi.next();
+				}
+				var fieldInfo = new asiTableValObj(tcol.getColumnName(), tval, readOnly);
+				tempObject[tcol.getColumnName()] = fieldInfo;
+				//tempObject[tcol.getColumnName()] = tval;
+			}
+			tempArray.push(tempObject); // end of record
+		}
+		addASITable(tn, tempArray, pToCapId);
+		//logDebug("ASI Table Array : " + tn + " (" + numrows + " Rows)");
+	}
+}
+
+function asiTableValObj(columnName, fieldValue, readOnly) 
+{
+	this.columnName = columnName;
+	this.fieldValue = fieldValue;
+	this.readOnly = readOnly;
+	this.hasValue = Boolean(fieldValue != null & fieldValue != "");
+
+	asiTableValObj.prototype.toString=function(){ return this.hasValue ? String(this.fieldValue) : String(""); }
+}
+
+function removeASITable(tableName) // optional capId
+{
+	//  tableName is the name of the ASI table
+	//  tableValues is an associative array of values.  All elements MUST be strings.
+	var itemCap = capId
+	if (arguments.length > 1) itemCap = arguments[1]; // use cap ID specified in args
+	var tssmResult = aa.appSpecificTableScript.removeAppSpecificTableInfos(tableName, itemCap, currentUserID)
+	if (!tssmResult.getSuccess())
+	{ 
+		//aa.print("**WARNING: error removing ASI table " + tableName + " " + tssmResult.getErrorMessage()); 
+		return false;
+	}
+	//else
+	//{
+	//	logDebug("Successfully removed all rows from ASI Table: " + tableName);
+	//}
+}
+
+function addASITable(tableName, tableValueArray) // optional capId
+{
+	//  tableName is the name of the ASI table
+	//  tableValueArray is an array of associative array values.  All elements MUST be either a string or asiTableVal object
+	var itemCap = capId
+	if (arguments.length > 2)
+	{
+			itemCap = arguments[2]; // use cap ID specified in args
+	}
+	var tssmResult = aa.appSpecificTableScript.getAppSpecificTableModel(itemCap, tableName)
+	if (!tssmResult.getSuccess()) 
+	{
+		//logDebug("**WARNING: error retrieving app specific table " + tableName + " " + tssmResult.getErrorMessage());
+		return false;
+	}
+	var tssm = tssmResult.getOutput();
+	var tsm = tssm.getAppSpecificTableModel();
+	var fld = tsm.getTableField();
+	var fld_readonly = tsm.getReadonlyField(); // get Readonly field
+	for (thisrow in tableValueArray) 
+	{
+		var col = tsm.getColumns();
+		var coli = col.iterator();
+		while (coli.hasNext()) 
+		{
+			var colname = coli.next();
+			if (!tableValueArray[thisrow][colname.getColumnName()]) 
+			{
+				//logDebug("addToASITable: null or undefined value supplied for column " + colname.getColumnName() + ", setting to empty string");
+				tableValueArray[thisrow][colname.getColumnName()] = "";
+			}
+			if (typeof(tableValueArray[thisrow][colname.getColumnName()].fieldValue) != "undefined") // we are passed an asiTablVal Obj
+			{
+				fld.add(tableValueArray[thisrow][colname.getColumnName()].fieldValue);
+				fld_readonly.add(tableValueArray[thisrow][colname.getColumnName()].readOnly);
+				//fld_readonly.add(null);
+			} 
+			else // we are passed a string
+			{
+				fld.add(tableValueArray[thisrow][colname.getColumnName()]);
+				fld_readonly.add(null);
+			}
+		}
+		tsm.setTableField(fld);
+		tsm.setReadonlyField(fld_readonly);
+	}
+	var addResult = aa.appSpecificTableScript.editAppSpecificTableInfos(tsm, itemCap, currentUserID);
+	if (!addResult.getSuccess()) 
+	{
+		//logDebug("**WARNING: error adding record to ASI Table:  " + tableName + " " + addResult.getErrorMessage());
+		return false;
+	} 
+	//else
+	//{
+	//	logDebug("Successfully added record to ASI Table: " + tableName);
+	//}
+}
+
+function sendNotification(emailFrom, emailTo, emailCC, templateName, params, reportFile)
+{
+	var itemCap = capId;
+	if (arguments.length == 7) itemCap = arguments[6]; // use cap ID specified in args
+	var id1 = itemCap.ID1;
+ 	var id2 = itemCap.ID2;
+ 	var id3 = itemCap.ID3;
+	var capIDScriptModel = aa.cap.createCapIDScriptModel(id1, id2, id3);
+	var result = null;
+	result = aa.document.sendEmailAndSaveAsDocument(emailFrom, emailTo, emailCC, templateName, params, capIDScriptModel, reportFile);
+	if(result.getSuccess())
+	{
+		logDebug("Sent email successfully!");
+		return true;
+	}
+	else
+	{
+		logDebug("Failed to send mail. - " + result.getErrorType());
+		return false;
+	}
+}
+
+function addParameter(pamaremeters, key, value)
+{
+	if(key != null)
+	{
+		if(value == null)
+		{
+			value = "";
+		}
+		pamaremeters.put(key, value);
+	}
+}
+
+ function getPrimaryAddressLineParam4Notification(params) 
+ {
+	// pass in a hashtable and it will add the additional parameters to the table
+    var addressLine = "";
+	adResult = aa.address.getPrimaryAddressByCapID(capId,"Y");
+	if (adResult.getSuccess()) 
+	{
+		ad = adResult.getOutput().getAddressModel();
+		addParameter(params, "$$addressLine$$", ad.getDisplayAddress());
+	}
+	return params;
+}
+
+function updateAppStatus(stat,cmt) 
+{
+	var thisCap = capId;
+	if (arguments.length > 2) thisCap = arguments[2];
+	updateStatusResult = aa.cap.updateAppStatus(thisCap, "APPLICATION", stat, sysDate, cmt, systemUserObj);
+	//if (!updateStatusResult.getSuccess()) 
+	//{
+		//logDebug("ERROR: application status update to " + stat + " was unsuccessful.  The reason is "  + 
+		//updateStatusResult.getErrorType() + ":" + updateStatusResult.getErrorMessage());
+	//} 
+	//else 
+	//{
+	//	logDebug("Application Status updated to " + stat);
+	//}
+}
+
+function getContactArray()
+{
+	// Returns an array of associative arrays with contact attributes.  Attributes are UPPER CASE
+	// optional capid
+	// added check for ApplicationSubmitAfter event since the contactsgroup array is only on pageflow,
+	// on ASA it should still be pulled normal way even though still partial cap
+	var thisCap = capId;
+	if (arguments.length == 1) thisCap = arguments[0];
+	var cArray = new Array();
+	if (arguments.length == 0 && !cap.isCompleteCap() && controlString != "ApplicationSubmitAfter") // we are in a page flow script so use the capModel to get contacts
+	{
+	capContactArray = cap.getContactsGroup().toArray() ;
+	}
+	else
+	{
+	var capContactResult = aa.people.getCapContactByCapID(thisCap);
+	if (capContactResult.getSuccess())
+		{
+		var capContactArray = capContactResult.getOutput();
+		}
+	}
+
+	if (capContactArray)
+	{
+	for (yy in capContactArray)
+		{
+		var aArray = new Array();
+		aArray["lastName"] = capContactArray[yy].getPeople().lastName;
+		aArray["refSeqNumber"] = capContactArray[yy].getCapContactModel().getRefContactNumber();
+		aArray["firstName"] = capContactArray[yy].getPeople().firstName;
+		aArray["middleName"] = capContactArray[yy].getPeople().middleName;
+		aArray["businessName"] = capContactArray[yy].getPeople().businessName;
+		aArray["contactSeqNumber"] =capContactArray[yy].getPeople().contactSeqNumber;
+		aArray["contactType"] =capContactArray[yy].getPeople().contactType;
+		aArray["relation"] = capContactArray[yy].getPeople().relation;
+		aArray["phone1"] = capContactArray[yy].getPeople().phone1;
+		aArray["phone2"] = capContactArray[yy].getPeople().phone2;
+		aArray["email"] = capContactArray[yy].getPeople().email;
+		aArray["addressLine1"] = capContactArray[yy].getPeople().getCompactAddress().getAddressLine1();
+		aArray["addressLine2"] = capContactArray[yy].getPeople().getCompactAddress().getAddressLine2();
+		aArray["city"] = capContactArray[yy].getPeople().getCompactAddress().getCity();
+		aArray["state"] = capContactArray[yy].getPeople().getCompactAddress().getState();
+		aArray["zip"] = capContactArray[yy].getPeople().getCompactAddress().getZip();
+		aArray["fax"] = capContactArray[yy].getPeople().fax;
+		aArray["notes"] = capContactArray[yy].getPeople().notes;
+		aArray["country"] = capContactArray[yy].getPeople().getCompactAddress().getCountry();
+		aArray["fullName"] = capContactArray[yy].getPeople().fullName;
+		aArray["peopleModel"] = capContactArray[yy].getPeople();
+
+		var pa = new Array();
+
+		if (arguments.length == 0 && !cap.isCompleteCap()) {
+			var paR = capContactArray[yy].getPeople().getAttributes();
+			if (paR) pa = paR.toArray();
+			}
+		else
+			var pa = capContactArray[yy].getCapContactModel().getPeople().getAttributes().toArray();
+				for (xx1 in pa)
+					aArray[pa[xx1].attributeName] = pa[xx1].attributeValue;
+
+		cArray.push(aArray);
+		}
+	}
+	return cArray;
+}
+
+function copyAddresses(pFromCapId, pToCapId)
+{
+	if (pToCapId==null)
+	{
+		var vToCapId = capId;
+	}
+	else
+	{
+		var vToCapId = pToCapId;
+	}
+	//check if target CAP has primary address
+	var priAddrExists = false;
+	var capAddressResult = aa.address.getAddressByCapId(vToCapId);
+	if (capAddressResult.getSuccess())
+	{
+		Address = capAddressResult.getOutput();
+		for (yy in Address)
+		{
+			if ("Y"==Address[yy].getPrimaryFlag())
+			{
+				priAddrExists = true;
+				//logDebug("Target CAP has primary address");
+				break;
+			}
+		}
+	}
+	else
+	{
+		//logMessage("**ERROR: Failed to get addresses: " + capAddressResult.getErrorMessage());
+		return false;
+	}
+	//get addresses from originating CAP
+	var capAddressResult = aa.address.getAddressWithAttributeByCapId(pFromCapId);
+	var copied = 0;
+	if (capAddressResult.getSuccess())
+	{
+		Address = capAddressResult.getOutput();
+		for (yy in Address)
+		{
+			newAddress = Address[yy];
+			newAddress.setCapID(vToCapId);
+			if (priAddrExists) newAddress.setPrimaryFlag("N"); //prevent target CAP from having more than 1 primary address
+			aa.address.createAddressWithAPOAttribute(vToCapId, newAddress);
+			//logDebug("Copied address from "+pFromCapId.getCustomID()+" to "+vToCapId.getCustomID());
+			copied++;
+		}
+	}
+	else
+	{
+		//logMessage("**ERROR: Failed to get addresses: " + capAddressResult.getErrorMessage());
+		return false;
+	}
+	return copied;
+}
+
+function getAppSpecific(itemName) 
+{ // optional: itemCap
+	var updated = false;
+	var i=0;
+	var itemCap = capId;
+	if (arguments.length == 2) itemCap = arguments[1]; // use cap ID specified in args
+	if (useAppSpecificGroupName) 
+	{
+		if (itemName.indexOf(".") < 0) 
+		{
+			//logDebug("**WARNING: editAppSpecific requires group name prefix when useAppSpecificGroupName is true"); 
+			return false 
+		}
+		var itemGroup = itemName.substr(0,itemName.indexOf("."));
+		var itemName = itemName.substr(itemName.indexOf(".")+1);
+	}
+	var appSpecInfoResult = aa.appSpecificInfo.getByCapID(itemCap);
+	if (appSpecInfoResult.getSuccess()) 
+	{
+		var appspecObj = appSpecInfoResult.getOutput();
+		if (itemName != "") 
+		{
+			for (i in appspecObj) 
+			{
+				if( appspecObj[i].getCheckboxDesc() == itemName && (!useAppSpecificGroupName || appspecObj[i].getCheckboxType() == itemGroup) )
+				{
+					return appspecObj[i].getChecklistComment();
+					break;
+				}
+			}
+		}
+	} 
+	//else 
+	//{ 
+	//	logDebug( "**ERROR: getting app specific info for Cap : " + appSpecInfoResult.getErrorMessage())
+	//}
+}
+
+function updateTask(wfstr, wfstat, wfcomment, wfnote) // optional process name, cap id
+{
+	var useProcess = false;
+	var processName = "";
+	if (arguments.length > 4) 
+	{
+		if (arguments[4] != "") 
+		{
+			processName = arguments[4]; // subprocess
+			useProcess = true;
+		}
+	}
+	var itemCap = capId;
+	if (arguments.length == 6)
+	{
+		itemCap = arguments[5]; // use cap ID specified in args
+	}
+	var workflowResult = aa.workflow.getTaskItems(itemCap, wfstr, processName, null, null, null);
+	if (workflowResult.getSuccess())
+	{
+		var wfObj = workflowResult.getOutput();
+	}
+	else 
+	{
+		//logDebug("**ERROR: Failed to get workflow object: " + s_capResult.getErrorMessage());
+		return false;
+	}
+	if (!wfstat)
+	{
+		wfstat = "NA";
+	}
+	for (i in wfObj)
+	{
+		var fTask = wfObj[i];
+		if (fTask.getTaskDescription().toUpperCase().equals(wfstr.toUpperCase()) && (!useProcess || fTask.getProcessCode().equals(processName))) 
+		{
+			var dispositionDate = aa.date.getCurrentDate();
+			var stepnumber = fTask.getStepNumber();
+			var processID = fTask.getProcessID();
+			if (useProcess)
+			{
+				aa.workflow.handleDisposition(itemCap, stepnumber, processID, wfstat, dispositionDate, wfnote, wfcomment, systemUserObj, "U");
+				//logDebug("Updating Workflow Task " + wfstr + " with status " + wfstat);
+			}
+			else
+			{
+				aa.workflow.handleDisposition(itemCap, stepnumber, wfstat, dispositionDate, wfnote, wfcomment, systemUserObj, "U");
+				//logDebug("Updating Workflow Task " + wfstr + " with status " + wfstat);
+			}
+		}
+	}
+}
+
+function addFee(fcode, fsched, fperiod, fqty, finvoice) // Adds a single fee, optional argument: fCap
+{
+	// Updated Script will return feeSeq number or null if error encountered (SR5112)
+	var feeCap = capId;
+	var feeCapMessage = "";
+	var feeSeq_L = new Array(); // invoicing fee for CAP in args
+	var paymentPeriod_L = new Array(); // invoicing pay periods for CAP in args
+	var feeSeq = null;
+	if (arguments.length > 5) 
+	{
+		feeCap = arguments[5]; // use cap ID specified in args
+		feeCapMessage = " to specified CAP";
+	}
+	assessFeeResult = aa.finance.createFeeItem(feeCap, fsched, fcode, fperiod, fqty);
+	if (assessFeeResult.getSuccess()) {
+		feeSeq = assessFeeResult.getOutput();
+		//logDebug("Successfully added Fee " + fcode + ", Qty " + fqty + feeCapMessage);
+		//logDebug("The assessed fee Sequence Number " + feeSeq + feeCapMessage);
+		if (finvoice == "Y" && arguments.length == 5) // use current CAP
+		{
+			feeSeqList.push(feeSeq);
+			paymentPeriodList.push(fperiod);
+		}
+		if (finvoice == "Y" && arguments.length > 5) // use CAP in args
+		{
+			feeSeq_L.push(feeSeq);
+			paymentPeriod_L.push(fperiod);
+			var invoiceResult_L = aa.finance.createInvoice(feeCap, feeSeq_L, paymentPeriod_L);
+			//if (invoiceResult_L.getSuccess())
+			//	logDebug("Invoicing assessed fee items" + feeCapMessage + " is successful.");
+			//else
+			//	logDebug("**ERROR: Invoicing the fee items assessed" + feeCapMessage + " was not successful.  Reason: " + invoiceResult.getErrorMessage());
+		}
+		updateFeeItemInvoiceFlag(feeSeq, finvoice);
+	} 
+	else 
+	{
+		//logDebug("**ERROR: assessing fee (" + fcode + "): " + assessFeeResult.getErrorMessage());
+		feeSeq = null;
+	}
+	return feeSeq;
+}
+
+function updateFeeItemInvoiceFlag(feeSeq, finvoice)
+{
+	if(feeSeq == null)
+		return;
+	if(!cap.isCompleteCap())
+	{
+		var feeItemScript = aa.finance.getFeeItemByPK(capId,feeSeq);
+		if(feeItemScript.getSuccess)
+		{
+			var feeItem = feeItemScript.getOutput().getF4FeeItem();
+			feeItem.setAutoInvoiceFlag(finvoice);
+			aa.finance.editFeeItem(feeItem);
+		}
+	}
+}
+
+function dateAdd(td,amt) 
+{
+	// perform date arithmetic on a string
+	// td can be "mm/dd/yyyy" (or any string that will convert to JS date)
+	// amt can be positive or negative (5, -3) days
+	if (!td) 
+	{
+		dDate = new Date();
+	} 
+	else 
+	{
+		dDate = convertDate(td);
+	}
+	//var i = 0;
+	//while (i < Math.abs(amt)) 
+	//{
+	//	dDate = new Date(aa.calendar.getNextWorkDay(aa.date.parseDate(dDate.getMonth()+1 + "/" + dDate.getDate() + "/" + dDate.getFullYear())).getOutput().getTime());
+	//	i++;
+	//}
+	dDate.setTime(dDate.getTime() + (1000 * 60 * 60 * 24 * amt));
+	return (dDate.getMonth() + 1) + "/" + dDate.getDate() + "/" + dDate.getFullYear();
+}
+
+function dateAddMonths(pDate, pMonths) {
+	// Adds specified # of months (pMonths) to pDate and returns new date as string in format MM/DD/YYYY
+	// If pDate is null, uses current date
+	// pMonths can be positive (to add) or negative (to subtract) integer
+	// If pDate is on the last day of the month, the new date will also be end of month.
+	// If pDate is not the last day of the month, the new date will have the same day of month, unless such a day doesn't exist in the month, 
+	// in which case the new date will be on the last day of the month
+	if (!pDate) {
+		baseDate = new Date();
+	} else {
+		baseDate = convertDate(pDate);
+	}
+	var day = baseDate.getDate();
+	baseDate.setMonth(baseDate.getMonth() + pMonths);
+	if (baseDate.getDate() < day) {
+		baseDate.setDate(1);
+		baseDate.setDate(baseDate.getDate() - 1);
+		}
+	return ((baseDate.getMonth() + 1) + "/" + baseDate.getDate() + "/" + baseDate.getFullYear());
+}
+
+function convertDate(thisDate) {
+	//converts date to javascript date
+	if (typeof(thisDate) == "string") {
+		var retVal = new Date(String(thisDate));
+		if (!retVal.toString().equals("Invalid Date"))
+		return retVal;
+	}
+	if (typeof(thisDate)== "object") {
+		if (!thisDate.getClass) {// object without getClass, assume that this is a javascript date already 
+			return thisDate;
+		}
+		if (thisDate.getClass().toString().equals("class com.accela.aa.emse.dom.ScriptDateTime")) {
+			return new Date(thisDate.getMonth() + "/" + thisDate.getDayOfMonth() + "/" + thisDate.getYear());
+		}
+		if (thisDate.getClass().toString().equals("class java.util.Date")) {
+			return new Date(thisDate.getTime());
+		}
+		if (thisDate.getClass().toString().equals("class java.lang.String")) {
+			return new Date(String(thisDate));
+		}
+	}
+	if (typeof(thisDate) == "number") {
+		return new Date(thisDate);  // assume milliseconds
+	}
+	logDebug("**WARNING** convertDate cannot parse date : " + thisDate);
+	return null;
+}
+
+function jsDateToMMDDYYYY(pJavaScriptDate) {
+	//converts javascript date to string in MM/DD/YYYY format
+	if (pJavaScriptDate != null) {
+		if (Date.prototype.isPrototypeOf(pJavaScriptDate)) {
+			return (pJavaScriptDate.getMonth()+1).toString()+"/"+pJavaScriptDate.getDate()+"/"+pJavaScriptDate.getFullYear();
+		} else {
+			logDebug("Parameter is not a javascript date");
+			return ("INVALID JAVASCRIPT DATE");
+		}
+	} else {
+		logDebug("Parameter is null");
+		return ("NULL PARAMETER VALUE");
+	}
+}
+
+function matches(eVal, argList) 
+{
+	for (var i = 1; i < arguments.length; i++) 
+	{
+		if (arguments[i] == eVal) 
+		{
+			return true;
+		}
+	}
+	return false;
+} 
+
+function debugObject(object) {
+	 var output = ''; 
+	 for (property in object) { 
+	   output += "<font color=red>" + property + "</font>" + ': ' + "<bold>" + object[property] + "</bold>" +'; ' + "<BR>"; 
+	 } 
+	 logDebug(output);
+} 
+
+function elapsed() {
+	var thisDate = new Date();
+	var thisTime = thisDate.getTime();
+	return ((thisTime - startTime) / 1000)
+}
+
+function logDebug(dstr) {
+	if(showDebug) {
+		aa.print(dstr)
+		emailText += dstr + "<br>";
+		aa.debug(aa.getServiceProviderCode() + " : " + aa.env.getValue("CurrentUserID"),dstr)
+	}
+}
+
+function exists(eVal, eArray) {
+	  for (ii in eArray)
+	  	if (eArray[ii] == eVal) return true;
+	  return false;
+}
